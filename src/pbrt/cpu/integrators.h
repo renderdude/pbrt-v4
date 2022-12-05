@@ -90,6 +90,7 @@ class ImageTileIntegrator : public Integrator {
                                      ScratchBuffer &scratchBuffer) = 0;
 
   protected:
+    void export_raytree(Point2i const& pPixel);
     // ImageTileIntegrator Protected Members
     Camera camera;
     Sampler samplerPrototype;

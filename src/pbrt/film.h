@@ -29,6 +29,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "ray.h"
 
 namespace pbrt {
 

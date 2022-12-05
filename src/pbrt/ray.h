@@ -9,10 +9,15 @@
 
 #include <pbrt/base/medium.h>
 #include <pbrt/util/vecmath.h>
+#include <pbrt/util/parallel.h>
 
 #include <string>
+#include <vector>
 
 namespace pbrt {
+
+using Light_Segment = std::vector<Point3f>;
+static ThreadLocal<std::map<char, std::vector<Light_Segment>>>* ray_tree;
 
 // Ray Definition
 class Ray {
@@ -29,7 +34,7 @@ class Ray {
     Ray() = default;
     PBRT_CPU_GPU
     Ray(Point3f o, Vector3f d, Float time = 0.f, Medium medium = nullptr)
-        : o(o), d(d), time(time), medium(medium) {}
+    : o(o), d(d), time(time), medium(medium) {}
 
     // Ray Public Members
     Point3f o;

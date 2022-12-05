@@ -41,10 +41,30 @@
 #include <pbrt/util/string.h>
 
 #include <algorithm>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <ostream>
+#include <vector>
+#include "pbrt/pbrt.h"
+#include "pbrt/ray.h"
+#include "pbrt/util/float.h"
 
 namespace pbrt {
 
 STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
+
+// Indent levels for prettying the output.
+static std::string L0 = "";
+static std::string L1 = "  ";
+static std::string L2 = "    ";
+static std::string L3 = "      ";
+static std::string L4 = "        ";
+
+static std::mutex ray_tree_mutex;
+static std::ofstream output_file;
+static ThreadLocal<std::vector<char>>* current_segment;
+//std::map<char, std::vector<Light_Segment>> *ray_tree_debug;
 
 // RandomWalkIntegrator Method Definitions
 std::unique_ptr<RandomWalkIntegrator> RandomWalkIntegrator::Create(
@@ -62,8 +82,70 @@ std::string RandomWalkIntegrator::ToString() const {
 // Integrator Method Definitions
 Integrator::~Integrator() {}
 
+void ImageTileIntegrator::export_raytree(Point2i const &pPixel) {
+    output_file << L1 << "{" << std::endl;
+    for (auto &segments : ray_tree->Get()) {
+        switch (segments.first) {
+        case 'P': {
+            output_file << L2 << "\"primary\": [";
+            break;
+        }
+        case 'S': {
+            output_file << L2 << "\"secondary\": [";
+            break;
+        }
+        case 'L': {
+            output_file << L2 << "\"light\": [";
+            break;
+        }
+        case '?': {
+            output_file << L2 << "\"unknown\": [";
+            break;
+        }
+        default: {
+            std::cerr << "unknown parameter: \"" << segments.first << "\"" << std::endl;
+            ;
+            break;
+        }
+        }
+        bool first_outer_iter = true;
+        output_file << std::endl;
+        for (auto &segment : segments.second) {
+            bool first_iter = true;
+            if (first_outer_iter)
+                first_outer_iter = false;
+            else
+                output_file << "," << std::endl;
+            output_file << L3 << "[";
+            for (auto &point : segment) {
+                if (first_iter)
+                    first_iter = false;
+                else
+                    output_file << ", ";
+                output_file << camera.GetCameraTransform().RenderFromWorld().ApplyInverse(
+                    point);
+            }
+            output_file << "]";
+        }
+        output_file << std::endl << L2 << "]," << std::endl;
+    }
+    // Put the pixel declaration last to consume the ',' above
+    output_file << L2 << "\"pixel\": " << pPixel << std::endl;
+    output_file << L1 << "}" << std::endl;
+
+    ray_tree->Get().clear();
+}
+
 // ImageTileIntegrator Method Definitions
 void ImageTileIntegrator::Render() {
+    output_file.open("/tmp/ray_tree_out.json", std::ios::out);
+
+    output_file << L0 << "{" << std::endl;
+    output_file << L1 << "\"rays\": [" << std::endl;
+
+    current_segment = new ThreadLocal<std::vector<char>>;
+    ray_tree = new ThreadLocal<std::map<char, std::vector<Light_Segment>>>;
+
     // Handle debugStart, if set
     if (!Options->debugStart.empty()) {
         std::vector<int> c = SplitStringToInts(Options->debugStart, ',');
@@ -83,6 +165,13 @@ void ImageTileIntegrator::Render() {
 
         EvaluatePixelSample(pPixel, sampleIndex, tileSampler, scratchBuffer);
 
+        export_raytree(pPixel);
+
+        // Finalize JSON output
+        output_file << L1 << "]" << std::endl;
+        output_file << L0 << "}" << std::endl;
+
+        output_file.close();
         return;
     }
 
@@ -177,6 +266,8 @@ void ImageTileIntegrator::Render() {
                     sampler.StartPixelSample(pPixel, sampleIndex);
                     EvaluatePixelSample(pPixel, sampleIndex, sampler, scratchBuffer);
                     scratchBuffer.Reset();
+                    std::lock_guard<std::mutex> lock(ray_tree_mutex);
+                    export_raytree(pPixel);
                 }
 
                 StatsReportPixelEnd(pPixel);
@@ -221,6 +312,11 @@ void ImageTileIntegrator::Render() {
         fclose(mseOutFile);
     DisconnectFromDisplayServer();
     LOG_VERBOSE("Rendering finished");
+
+    // Finalize JSON output
+    output_file << L1 << "]" << std::endl;
+    output_file << L0 << "}" << std::endl;
+    output_file.close();
 }
 
 // RayIntegrator Method Definitions
@@ -244,6 +340,11 @@ void RayIntegrator::EvaluatePixelSample(Point2i pPixel, int sampleIndex, Sampler
     SampledSpectrum L(0.);
     VisibleSurface visibleSurface;
     if (cameraRay) {
+        current_segment->Get().push_back('P');
+        //ray_tree_debug = &(ray_tree->Get());
+        ray_tree->Get()[current_segment->Get().back()].push_back(Light_Segment());
+        ray_tree->Get()[current_segment->Get().back()].back().push_back(cameraRay->ray.o);
+
         // Double check that the ray's direction is normalized.
         DCHECK_GT(Length(cameraRay->ray.d), .999f);
         DCHECK_LT(Length(cameraRay->ray.d), 1.001f);
@@ -1033,7 +1134,12 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                             // Sample direct lighting at volume scattering event
                             MediumInteraction intr(p, -ray.d, ray.time, ray.medium,
                                                    mp.phase);
+                            ray_tree->Get()[current_segment->Get().back()].back().push_back(
+                                p);
                             L += SampleLd(intr, nullptr, lambda, sampler, beta, r_u);
+                            current_segment->Get().pop_back();
+                            ray_tree->Get()[current_segment->Get().back()].back().push_back(
+                                p);
 
                             // Sample new direction at real scattering event
                             Point2f u = sampler.Get2D();
@@ -1116,7 +1222,10 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
         // Get BSDF and skip over medium boundaries
         BSDF bsdf = isect.GetBSDF(ray, lambda, camera, scratchBuffer, sampler);
         if (!bsdf) {
+            ray_tree->Get()[current_segment->Get().back()].back().push_back(
+                Point3f(isect.pi));
             isect.SkipIntersection(&ray, si->tHit);
+            ray_tree->Get()[current_segment->Get().back()].back().push_back(ray.o);
             continue;
         }
 
@@ -1144,6 +1253,8 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
             *visibleSurf = VisibleSurface(isect, albedo, lambda);
         }
 
+        // We have a hit!
+        ray_tree->Get()[current_segment->Get().back()].back().push_back(Point3f(isect.pi));
         // Terminate path if maximum depth reached
         if (depth++ >= maxDepth)
             return L;
@@ -1186,6 +1297,12 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
             etaScale *= Sqr(bs->eta);
         ray = isect.SpawnRay(ray, bsdf, bs->wi, bs->flags, bs->eta);
 
+        // Reset the segment stack, now that we're done with the primary ray.
+        current_segment->Get().pop_back();
+        current_segment->Get().push_back('S');
+        ray_tree->Get()[current_segment->Get().back()].push_back(Light_Segment());
+        ray_tree->Get()[current_segment->Get().back()].back().push_back(
+            ray.o);  // Start bounced ray
         // Account for attenuated subsurface scattering, if applicable
         BSSRDF bssrdf = isect.GetBSSRDF(ray, lambda, camera, scratchBuffer);
         if (bssrdf && bs->IsTransmission()) {
@@ -1269,6 +1386,13 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
             beta /= 1 - q;
         }
     }
+    if (aggregate) {
+        Bounds3f bound = aggregate.Bounds();
+        Float hit0, hit1;
+        bound.IntersectP(ray.o, ray.d, Infinity, &hit0, &hit1);
+        ray_tree->Get()[current_segment->Get().back()].back().push_back(ray.o +
+                                                                      hit1 * ray.d);
+    }
     return L;
 }
 
@@ -1327,6 +1451,10 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
 
     // Declare path state variables for ray to light source
     Ray lightRay = intr.SpawnRayTo(ls->pLight);
+    current_segment->Get().push_back('L');
+    ray_tree->Get()[current_segment->Get().back()].push_back(Light_Segment());
+    ray_tree->Get()[current_segment->Get().back()].back().push_back(Point3f(lightRay.o));
+
     SampledSpectrum T_ray(1.f), r_l(1.f), r_u(1.f);
     RNG rng(Hash(lightRay.o), Hash(lightRay.d));
 
@@ -1334,41 +1462,48 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
         // Trace ray through media to estimate transmittance
         pstd::optional<ShapeIntersection> si = Intersect(lightRay, 1 - ShadowEpsilon);
         // Handle opaque surface along ray's path
-        if (si && si->intr.material)
+        if (si && si->intr.material) {
+            ray_tree->Get()[current_segment->Get().back()].back().push_back(
+                Point3f(si->intr.pi));
             return SampledSpectrum(0.f);
+        }
 
         // Update transmittance for current ray segment
         if (lightRay.medium) {
             Float tMax = si ? si->tHit : (1 - ShadowEpsilon);
             Float u = rng.Uniform<Float>();
-            SampledSpectrum T_maj =
-                SampleT_maj(lightRay, tMax, u, rng, lambda,
-                            [&](Point3f p, MediumProperties mp, SampledSpectrum sigma_maj,
-                                SampledSpectrum T_maj) {
-                                // Update ray transmittance estimate at sampled point
-                                // Update _T_ray_ and PDFs using ratio-tracking estimator
-                                SampledSpectrum sigma_n =
-                                    ClampZero(sigma_maj - mp.sigma_a - mp.sigma_s);
-                                Float pdf = T_maj[0] * sigma_maj[0];
-                                T_ray *= T_maj * sigma_n / pdf;
-                                r_l *= T_maj * sigma_maj / pdf;
-                                r_u *= T_maj * sigma_n / pdf;
+            SampledSpectrum T_maj = SampleT_maj(
+                lightRay, tMax, u, rng, lambda,
+                [&](Point3f p, MediumProperties mp, SampledSpectrum sigma_maj,
+                    SampledSpectrum T_maj) {
+                    // Update ray transmittance estimate at sampled point
+                    // Update _T_ray_ and PDFs using ratio-tracking estimator
+                    SampledSpectrum sigma_n =
+                        ClampZero(sigma_maj - mp.sigma_a - mp.sigma_s);
+                    Float pdf = T_maj[0] * sigma_maj[0];
+                    T_ray *= T_maj * sigma_n / pdf;
+                    r_l *= T_maj * sigma_maj / pdf;
+                    r_u *= T_maj * sigma_n / pdf;
 
-                                // Possibly terminate transmittance computation using
-                                // Russian roulette
-                                SampledSpectrum Tr = T_ray / (r_l + r_u).Average();
-                                if (Tr.MaxComponentValue() < 0.05f) {
-                                    Float q = 0.75f;
-                                    if (rng.Uniform<Float>() < q)
-                                        T_ray = SampledSpectrum(0.);
-                                    else
-                                        T_ray /= 1 - q;
-                                }
+                    // Possibly terminate transmittance computation using
+                    // Russian roulette
+                    SampledSpectrum Tr = T_ray / (r_l + r_u).Average();
+                    if (Tr.MaxComponentValue() < 0.05f) {
+                        Float q = 0.75f;
+                        if (rng.Uniform<Float>() < q)
+                            T_ray = SampledSpectrum(0.);
+                        else
+                            T_ray /= 1 - q;
+                    }
 
-                                if (!T_ray)
-                                    return false;
-                                return true;
-                            });
+                    if (!T_ray) {
+                        // Terminated via Russian roulette
+                        ray_tree->Get()[current_segment->Get().back()].back().push_back(
+                            p);
+                        return false;
+                    }
+                    return true;
+                });
             // Update transmittance estimate for final segment
             T_ray *= T_maj / T_maj[0];
             r_l *= T_maj / T_maj[0];
@@ -1380,8 +1515,13 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
             return SampledSpectrum(0.f);
         if (!si)
             break;
+        ray_tree->Get()[current_segment->Get().back()].back().push_back(
+            Point3f(si->intr.pi));
         lightRay = si->intr.SpawnRayTo(ls->pLight);
+        ray_tree->Get()[current_segment->Get().back()].back().push_back(
+            Point3f(lightRay.o));
     }
+    ray_tree->Get()[current_segment->Get().back()].back().push_back(Point3f(ls->pLight.pi));
     // Return path contribution function estimate for direct lighting
     r_l *= r_p * lightPDF;
     r_u *= r_p * scatterPDF;
