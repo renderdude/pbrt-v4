@@ -82,6 +82,34 @@ std::string RandomWalkIntegrator::ToString() const {
 // Integrator Method Definitions
 Integrator::~Integrator() {}
 
+#if 1
+void ImageTileIntegrator::export_raytree(Point2i const &pPixel) {
+    output_file.write((char*)&pPixel, sizeof(Point2i));
+    auto& segment_map = ray_tree->Get();
+    short size = (short)(segment_map.size());
+    std::stringstream ss;
+    ss.write((char*)&size, sizeof(short));
+    for (auto &segments : segment_map) {
+        ss.write((char*)&segments.first, sizeof(char));
+        size = (short)(segments.second.size());
+        ss.write((char*)&size, sizeof(short));
+        for (auto &segment : segments.second) {
+            size = (short)(segment.size());
+            ss.write((char*)&size, sizeof(short));
+            for (auto &point : segment) {
+                auto pt = camera.GetCameraTransform().RenderFromWorld().ApplyInverse(point);
+                ss.write((char*)&pt, sizeof(Point3f));
+            }
+        }
+    }
+    std::string sss = ss.str();
+    size = (short)(sss.size());
+    output_file.write((char*)&size, sizeof(short));
+    output_file.write(sss.c_str(), sss.size());
+
+    ray_tree->Get().clear();
+}
+#else
 void ImageTileIntegrator::export_raytree(Point2i const &pPixel) {
     output_file << L1 << "{" << std::endl;
     for (auto &segments : ray_tree->Get()) {
@@ -135,13 +163,23 @@ void ImageTileIntegrator::export_raytree(Point2i const &pPixel) {
 
     ray_tree->Get().clear();
 }
+#endif
 
 // ImageTileIntegrator Method Definitions
 void ImageTileIntegrator::Render() {
-    output_file.open("/tmp/ray_tree_out.json", std::ios::out);
+    output_file.open("/tmp/ray_tree_out.bin", std::ios::out|std::ios::binary);
+    // Portability info
+    int size = sizeof(char);
+    output_file.write((char*)&size, sizeof(int));
+    size = sizeof(short);
+    output_file.write((char*)&size, sizeof(int));
+    size = sizeof(int);
+    output_file.write((char*)&size, sizeof(int));
+    size = sizeof(float);
+    output_file.write((char*)&size, sizeof(int));
 
-    output_file << L0 << "{" << std::endl;
-    output_file << L1 << "\"rays\": [" << std::endl;
+    //output_file << L0 << "{" << std::endl;
+    //output_file << L1 << "\"rays\": [" << std::endl;
 
     current_segment = new ThreadLocal<std::vector<char>>;
     ray_tree = new ThreadLocal<std::map<char, std::vector<Light_Segment>>>;
@@ -168,8 +206,8 @@ void ImageTileIntegrator::Render() {
         export_raytree(pPixel);
 
         // Finalize JSON output
-        output_file << L1 << "]" << std::endl;
-        output_file << L0 << "}" << std::endl;
+        //output_file << L1 << "]" << std::endl;
+        //output_file << L0 << "}" << std::endl;
 
         output_file.close();
         return;
@@ -314,8 +352,8 @@ void ImageTileIntegrator::Render() {
     LOG_VERBOSE("Rendering finished");
 
     // Finalize JSON output
-    output_file << L1 << "]" << std::endl;
-    output_file << L0 << "}" << std::endl;
+    //output_file << L1 << "]" << std::endl;
+    //output_file << L0 << "}" << std::endl;
     output_file.close();
 }
 
