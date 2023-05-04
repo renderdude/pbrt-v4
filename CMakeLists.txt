@@ -114,7 +114,9 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL Linux)
 else ()
   message (SEND_ERROR "Unknown system name: " + CMAKE_SYSTEM_NAME)
 endif()
-
+if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
+  add_definitions(-Wno-deprecated-declarations) # silent deprecated 'snprintf' message under MacOS arm64
+endif()
 # libgoogle-perftools-dev
 find_library (PROFILE_LIB profiler)
 if (NOT PROFILE_LIB)
@@ -136,6 +138,7 @@ target_compile_options (
         "$<$<CXX_COMPILER_ID:MSVC>:$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler >/wd26451>" # arithmetic on 4-byte value, then cast to 8-byte
         "$<$<CXX_COMPILER_ID:MSVC>:$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler >/wd26495>" # uninitialized member variable
         "$<$<CXX_COMPILER_ID:MSVC>:$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler >/wd4334>" # 32 to 64 bit displacement
+        "$<$<CXX_COMPILER_ID:MSVC>:$<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcompiler >/wd4146>" # NanoVDB: unary minus operator applied to unsigned type, result still unsigned
 )
 
 add_library (pbrt_opt INTERFACE)
