@@ -1174,10 +1174,13 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                                    mp.phase);
                             ray_tree->Get()[current_segment->Get().back()].back().push_back(
                                 p);
-                            L += SampleLd(intr, nullptr, lambda, sampler, beta, r_u);
-                            current_segment->Get().pop_back();
-                            ray_tree->Get()[current_segment->Get().back()].back().push_back(
-                                p);
+                            auto sampled_ld = SampleLd(intr, nullptr, lambda, sampler, beta, r_u);
+                            L += sampled_ld;
+                            if (sampled_ld != SampledSpectrum()) {
+                                current_segment->Get().pop_back();
+                                ray_tree->Get()[current_segment->Get().back()].back().push_back(
+                                    p);
+                            }
 
                             // Sample new direction at real-scattering event
                             Point2f u = sampler.Get2D();
