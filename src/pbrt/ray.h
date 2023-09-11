@@ -12,12 +12,27 @@
 #include <pbrt/util/parallel.h>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pbrt {
 
-using Light_Segment = std::vector<Point3f>;
-static ThreadLocal<std::map<char, std::vector<Light_Segment>>>* ray_tree;
+using Segment = struct
+{
+    char seg_type;
+    Point3f start_pt, end_pt;
+};
+
+using Segment_List = std::vector<Segment>;
+using Photon_Path = struct
+{
+    Point2i pixel;
+    Segment_List segments;
+};
+
+using Photon_Tile = std::vector<Photon_Path>;
+
+static ThreadLocal<Photon_Tile>* ray_tile;
 
 // Ray Definition
 class Ray {

@@ -627,6 +627,7 @@ SET (PBRT_UTIL_SOURCE
   src/pbrt/util/progressreporter.cpp
   src/pbrt/util/pstd.cpp
   src/pbrt/util/rng.cpp
+  src/pbrt/util/ray_export.cpp
   src/pbrt/util/sampling.cpp
   src/pbrt/util/scattering.cpp
   src/pbrt/util/sobolmatrices.cpp
@@ -667,6 +668,7 @@ SET (PBRT_UTIL_SOURCE_HEADERS
   src/pbrt/util/print.h
   src/pbrt/util/progressreporter.h
   src/pbrt/util/pstd.h
+  src/pbrt/util/ray_export.h
   src/pbrt/util/rng.h
   src/pbrt/util/sampling.h
   src/pbrt/util/scattering.h
