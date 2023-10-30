@@ -317,15 +317,16 @@ void RayIntegrator::EvaluatePixelSample(Point2i pPixel, int sampleIndex, Sampler
             L = SampledSpectrum(0.f);
         }
 
-        PBRT_DBG("%s\n",
-                 StringPrintf("Camera sample: %s -> ray %s -> L = %s, visibleSurface %s",
-                              cameraSample, cameraRay->ray, L,
-                              (visibleSurface ? visibleSurface.ToString() : "(none)"))
-                     .c_str());
-    } else {
         PBRT_DBG(
             "%s\n",
-            StringPrintf("Camera sample: %s -> no ray generated", cameraSample).c_str());
+            StringPrintf("Camera sample: %s -> ray %s -> L = %s, visibleSurface %s",
+                         cameraSample, cameraRay->ray, L,
+                         (visibleSurface ? visibleSurface.ToString() : "(none)"))
+                .c_str());
+    } else {
+	    PBRT_DBG("%s\n",
+	             StringPrintf("Camera sample: %s -> no ray generated", cameraSample)
+			             .c_str());
     }
     // Add camera ray's contribution to image
     camera.GetFilm().AddSample(pPixel, L, lambda, &visibleSurface,
@@ -1088,7 +1089,6 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                                                    sampler, beta, r_u, ray_tree);
                                         L += sampled_ld;
                                         if (sampled_ld != SampledSpectrum()) {
-                                            CHECK(false);
                                             ray_tree.current_segment->pop_back();
                                         }
 
@@ -1499,11 +1499,8 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
                                         T_ray /= 1 - q;
                                 }
 
-                                if (!T_ray) {
-                                    // Terminated via Russian roulette
-                                    CHECK(false);
+                                if (!T_ray)
                                     return false;
-                                }
                                 return true;
                             });
             // Update transmittance estimate for final segment
@@ -1517,7 +1514,6 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
             return SampledSpectrum(0.f);
         if (!si)
             break;
-        CHECK(false);
         {
             ray_tree.segments->back().end_pt = Point3f(si->intr.pi);
             Segment seg = {ray_tree.current_segment->back(), Point3f(si->intr.pi),
@@ -1531,7 +1527,6 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
             ray_tree.segments->push_back(seg);
         }
     }
-    CHECK(false);
     {
         ray_tree.segments->back().end_pt = Point3f(ls->pLight.pi);
         Segment seg = {ray_tree.current_segment->back(), Point3f(ls->pLight.pi), Point3f()};
@@ -1613,7 +1608,7 @@ retry:
         Ray r = isect.SpawnRay(wi);
         if (!IntersectP(r, maxDist)) {
             return illumScale * illuminant.Sample(lambda) *
-                   SampledSpectrum(Dot(wi, n) / (Pi * pdf));
+                   Dot(wi, n) / (Pi * pdf);
         }
     }
     return SampledSpectrum(0.);
@@ -2285,7 +2280,7 @@ SampledSpectrum G(const Integrator &integrator, Sampler sampler, const Vertex &v
     return g * integrator.Tr(v0.GetInteraction(), v1.GetInteraction(), lambda);
 }
 
-Float MISWeight(const Integrator &integrator, Vertex *lightVertices,
+Float MISWeight(const Integrator &integrator, Camera camera, Vertex *lightVertices,
                 Vertex *cameraVertices, Vertex &sampled, int s, int t,
                 LightSampler lightSampler) {
     if (s + t == 2)
@@ -2336,10 +2331,16 @@ Float MISWeight(const Integrator &integrator, Vertex *lightVertices,
     if (qsMinus)
         a7 = {&qsMinus->pdfRev, qs->PDF(integrator, pt, *qsMinus)};
 
+    Film film = camera.GetFilm();
+    Float splatScale = Float(film.FullResolution().x) * Float(film.FullResolution().y) /
+        Float(film.PixelBounds().Area());
+
     // Consider hypothetical connection strategies along the camera subpath
     Float ri = 1;
     for (int i = t - 1; i > 0; --i) {
         ri *= remap0(cameraVertices[i].pdfRev) / remap0(cameraVertices[i].pdfFwd);
+        // See https://github.com/mmp/pbrt-v4/issues/347
+        if (i == 1) ri /= splatScale;
         if (!cameraVertices[i].delta && !cameraVertices[i - 1].delta)
             sumRi += ri;
     }
@@ -2354,6 +2355,8 @@ Float MISWeight(const Integrator &integrator, Vertex *lightVertices,
             sumRi += ri;
     }
 
+    // See https://github.com/mmp/pbrt-v4/issues/347
+    if (t == 1) sumRi /= splatScale;
     return 1 / (1 + sumRi);
 }
 
@@ -2453,12 +2456,11 @@ SampledSpectrum BDPTIntegrator::Li(RayDifferential ray, SampledWavelengths &lamb
                     // scenes where the camera has a finite aperture, since
                     // we don't have the CameraSample either so just have
                     // to pass (0.5,0.5) in for the lens sample...
-                    pstd::optional<CameraWiSample> cs = camera.SampleWi(
-                        Interaction(ray(100.f), nullptr), Point2f(0.5f, 0.5f), lambda);
+                    pstd::optional<CameraWiSample> cs =
+                        camera.SampleWi(Interaction(ray(100.f), nullptr), Point2f(0.5f, 0.5f), lambda);
                     CHECK_RARE(1e-3, !cs);
                     if (cs)
-                        weightFilms[BufferIndex(s, t)].AddSplat(cs->pRaster, value,
-                                                                lambda);
+                        weightFilms[BufferIndex(s, t)].AddSplat(cs->pRaster, value, lambda);
                 }
             }
             if (t != 1)
@@ -2505,8 +2507,14 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
                 if (qs.IsOnSurface())
                     L *= AbsDot(cs->wi, qs.ns());
                 DCHECK(!L.HasNaNs());
-                if (L)
+                if (L) {
                     L *= integrator.Tr(cs->pRef, cs->pLens, lambda);
+
+                    // See https://github.com/mmp/pbrt-v4/issues/347
+                    Film film = camera.GetFilm();
+                    L *= Float(film.FullResolution().x) * Float(film.FullResolution().y) /
+                        Float(film.PixelBounds().Area());
+                }
             }
         }
 
@@ -2578,7 +2586,7 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
         ++zeroRadiancePaths;
     pathLength << s + t - 2;
     // Compute MIS weight for connection strategy
-    Float misWeight = L ? MISWeight(integrator, lightVertices, cameraVertices, sampled, s,
+    Float misWeight = L ? MISWeight(integrator, camera, lightVertices, cameraVertices, sampled, s,
                                     t, lightSampler)
                         : 0.f;
     PBRT_DBG("MIS weight for (s,t) = (%d, %d) connection: %f\n", s, t, misWeight);
