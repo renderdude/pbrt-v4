@@ -84,7 +84,7 @@ Integrator::~Integrator() {}
 
 // ImageTileIntegrator Method Definitions
 void ImageTileIntegrator::Render() {
-    ConnectToExporter("/tmp/segment_list_out.bin", camera);
+    ConnectToExporter("/tmp/ray_tree_out.bin", camera);
     current_segment = new ThreadLocal<std::vector<char>>;
     ray_tile = new ThreadLocal<Photon_Tile>;
     segment_list = new ThreadLocal<Segment_List>;
