@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <ostream>
 #include <utility>
@@ -1144,36 +1145,43 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
         // Handle surviving unscattered rays
         // Add emitted light at volume path vertex or from the environment
         if (!si) {
-            // Accumulate contributions from infinite light sources
-            for (const auto &light : infiniteLights) {
-                if (SampledSpectrum Le = light.Le(ray, lambda); Le) {
-                    if (depth == 0 || specularBounce)
-                        L += beta * Le / r_u.Average();
-                    else {
-                        // Add infinite light contribution using both PDFs with MIS
-                        Float p_l = lightSampler.PMF(prevIntrContext, light) *
-                                    light.PDF_Li(prevIntrContext, ray.d, true);
-                        r_l *= p_l;
-                        L += beta * Le / (r_u + r_l).Average();
-                    }
-                    Float rad;
-                    Point3f center;
-                    aggregate.Bounds().BoundingSphere(&center, &rad);
-                    Point3f light_pt = ray(rad);
-                    ray_tree.current_segment->push_back('L');
-                    // If the primary ray missed everything, we only have a single
-                    // value
-                    if (ray_tree.segments->size() == 1) {
-                        ray_tree.segments->back().seg_type =
-                            ray_tree.current_segment->back();
-                        ray_tree.segments->back().end_pt = light_pt;
-                    } else {
-                        ray_tree.segments->back().end_pt = Point3f(ray.o);
-                        Segment seg = {ray_tree.current_segment->back(), Point3f(ray.o),
-                                       light_pt};
-                        ray_tree.segments->push_back(seg);
+            if (!infiniteLights.empty()) {
+                // Accumulate contributions from infinite light sources
+                for (const auto &light : infiniteLights) {
+                    if (SampledSpectrum Le = light.Le(ray, lambda); Le) {
+                        if (depth == 0 || specularBounce)
+                            L += beta * Le / r_u.Average();
+                        else {
+                            // Add infinite light contribution using both PDFs with MIS
+                            Float p_l = lightSampler.PMF(prevIntrContext, light) *
+                                        light.PDF_Li(prevIntrContext, ray.d, true);
+                            r_l *= p_l;
+                            L += beta * Le / (r_u + r_l).Average();
+                        }
+                        Float rad;
+                        Point3f center;
+                        aggregate.Bounds().BoundingSphere(&center, &rad);
+                        Point3f light_pt = ray(rad);
+                        ray_tree.current_segment->push_back('L');
+                        // If the primary ray missed everything, we only have a single
+                        // value
+                        if (ray_tree.segments->size() == 1) {
+                            ray_tree.segments->back().seg_type =
+                                ray_tree.current_segment->back();
+                            ray_tree.segments->back().end_pt = light_pt;
+                        } else {
+                            ray_tree.segments->back().end_pt = Point3f(ray.o);
+                            Segment seg = {ray_tree.current_segment->back(),
+                                           Point3f(ray.o), light_pt};
+                            ray_tree.segments->push_back(seg);
+                        }
                     }
                 }
+            }
+            else {
+                // I'm assuming if I'm here the last end point is bogus, so let's check
+                CHECK_EQ(ray_tree.segments->back().end_pt, Point3f());
+                ray_tree.segments->pop_back();
             }
 
             break;
@@ -1455,6 +1463,9 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
     Ray lightRay = intr.SpawnRayTo(ls->pLight);
     ray_tree.current_segment->push_back('L');
     {
+        if (ray_tree.segments->back().end_pt == Point3f()) {
+            ray_tree.segments->back().end_pt = lightRay.o;
+        }
         Segment seg = {ray_tree.current_segment->back(), lightRay.o, Point3f()};
         ray_tree.segments->push_back(seg);
     }
