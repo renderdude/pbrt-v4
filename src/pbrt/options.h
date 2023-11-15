@@ -46,6 +46,7 @@ struct PBRTOptions : BasicPBRTOptions {
     pstd::optional<int> gpuDevice;
     bool quickRender = false;
     bool upgrade = false;
+    std::string raytreeFile;
     std::string imageFile;
     std::string mseReferenceImage, mseReferenceOutput;
     std::string debugStart;

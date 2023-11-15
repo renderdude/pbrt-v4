@@ -47,6 +47,7 @@ Rendering options:
                                 (Default: 1)
   --display-server <addr:port>  Connect to display server at given address and port
                                 to display the image as it's being rendered.
+  --export-ray-tree <filename>  Export the ray tree to the given filename.
   --force-diffuse               Convert all materials to be diffuse.)
   --fullscreen                  Render fullscreen. Only supported with --interactive.)"
 #ifdef PBRT_BUILD_GPU_RENDERER
@@ -174,6 +175,7 @@ int main(int argc, char *argv[]) {
                      &options.displacementEdgeScale, onError) ||
             ParseArg(&iter, args.end(), "display-server", &options.displayServer,
                      onError) ||
+            ParseArg(&iter, args.end(), "export-ray-tree", &options.raytreeFile, onError) ||
             ParseArg(&iter, args.end(), "force-diffuse", &options.forceDiffuse,
                      onError) ||
             ParseArg(&iter, args.end(), "format", &format, onError) ||
