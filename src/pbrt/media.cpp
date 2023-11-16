@@ -71,6 +71,11 @@ std::string HGPhaseFunction::ToString() const {
     return StringPrintf("[ HGPhaseFunction g: %f ]", g);
 }
 
+// TabulatedPhaseFunction Method Definitions
+std::string TabulatedPhaseFunction::ToString() const {
+    return StringPrintf("[ TabulatedPhaseFunction g: %f ]", g);
+}
+
 struct MeasuredSS {
     const char *name;
     RGB sigma_prime_s, sigma_a;  // mm^-1

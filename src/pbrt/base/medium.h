@@ -26,8 +26,9 @@ struct PhaseFunctionSample {
 
 // PhaseFunction Definition
 class HGPhaseFunction;
+class TabulatedPhaseFunction;
 
-class PhaseFunction : public TaggedPointer<HGPhaseFunction> {
+class PhaseFunction : public TaggedPointer<HGPhaseFunction, TabulatedPhaseFunction> {
   public:
     // PhaseFunction Interface
     using TaggedPointer::TaggedPointer;

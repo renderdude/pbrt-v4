@@ -69,6 +69,36 @@ class HGPhaseFunction {
     Float g;
 };
 
+// TabulatedPhaseFunction Definition
+class TabulatedPhaseFunction {
+  public:
+    // TabulatedPhaseFunction Public Methods
+    TabulatedPhaseFunction() = default;
+    PBRT_CPU_GPU
+    TabulatedPhaseFunction(Float g) : g(g) {}
+
+    PBRT_CPU_GPU
+    Float p(Vector3f wo, Vector3f wi) const { return HenyeyGreenstein(Dot(wo, wi), g); }
+
+    PBRT_CPU_GPU
+    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const {
+        Float pdf;
+        Vector3f wi = SampleHenyeyGreenstein(wo, g, u, &pdf);
+        return PhaseFunctionSample{pdf, wi, pdf};
+    }
+
+    PBRT_CPU_GPU
+    Float PDF(Vector3f wo, Vector3f wi) const { return p(wo, wi); }
+
+    static const char *Name() { return "Tabulate Phase Function"; }
+
+    std::string ToString() const;
+
+  private:
+    // TabulatedPhaseFunction Private Members
+    Float g;
+};
+
 // MediumProperties Definition
 struct MediumProperties {
     SampledSpectrum sigma_a, sigma_s;
