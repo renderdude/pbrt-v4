@@ -251,11 +251,11 @@ class HomogeneousMedium {
 
     // HomogeneousMedium Public Methods
     HomogeneousMedium(Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, Spectrum Le,
-                      Float LeScale, Float g, Allocator alloc)
+                      Float LeScale, PhaseFunction phaseF, Allocator alloc)
         : sigma_a_spec(sigma_a, alloc),
           sigma_s_spec(sigma_s, alloc),
           Le_spec(Le, alloc),
-          phase(g) {
+          phase(phaseF) {
         sigma_a_spec.Scale(sigmaScale);
         sigma_s_spec.Scale(sigmaScale);
         Le_spec.Scale(LeScale);
@@ -272,7 +272,7 @@ class HomogeneousMedium {
         SampledSpectrum sigma_a = sigma_a_spec.Sample(lambda);
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
         SampledSpectrum Le = Le_spec.Sample(lambda);
-        return MediumProperties{sigma_a, sigma_s, &phase, Le};
+        return MediumProperties{sigma_a, sigma_s, phase, Le};
     }
 
     PBRT_CPU_GPU
@@ -288,7 +288,7 @@ class HomogeneousMedium {
   private:
     // HomogeneousMedium Private Data
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec, Le_spec;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
 };
 
 // GridMedium Definition
@@ -299,7 +299,7 @@ class GridMedium {
 
     // GridMedium Public Methods
     GridMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
-               Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, Float g,
+               Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, PhaseFunction phaseF,
                SampledGrid<Float> density, pstd::optional<SampledGrid<Float>> temperature,
                Float temperatureScale, Float temperatureOffset,
                Spectrum Le, SampledGrid<Float> LeScale, Allocator alloc);
@@ -345,7 +345,7 @@ class GridMedium {
             }
         }
 
-        return MediumProperties{sigma_a, sigma_s, &phase, Le};
+        return MediumProperties{sigma_a, sigma_s, phase, Le};
     }
 
     PBRT_CPU_GPU
@@ -372,7 +372,7 @@ class GridMedium {
     Transform renderFromMedium;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
     SampledGrid<Float> densityGrid;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     pstd::optional<SampledGrid<Float>> temperatureGrid;
     DenselySampledSpectrum Le_spec;
     SampledGrid<Float> LeScale;
@@ -388,7 +388,7 @@ class RGBGridMedium {
     using MajorantIterator = DDAMajorantIterator;
 
     // RGBGridMedium Public Methods
-    RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium, Float g,
+    RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium, PhaseFunction phaseF,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_a,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_s,
                   Float sigmaScale, pstd::optional<SampledGrid<RGBIlluminantSpectrum>> Le,
@@ -427,7 +427,7 @@ class RGBGridMedium {
             Le = LeScale * LeGrid->Lookup(p, convert);
         }
 
-        return MediumProperties{sigma_a, sigma_s, &phase, Le};
+        return MediumProperties{sigma_a, sigma_s, phase, Le};
     }
 
     PBRT_CPU_GPU
@@ -450,7 +450,7 @@ class RGBGridMedium {
     Transform renderFromMedium;
     pstd::optional<SampledGrid<RGBIlluminantSpectrum>> LeGrid;
     Float LeScale;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_aGrid, sigma_sGrid;
     Float sigmaScale;
     MajorantGrid majorantGrid;
@@ -476,13 +476,13 @@ class CloudMedium {
     }
 
     CloudMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
-                Spectrum sigma_a, Spectrum sigma_s, Float g, Float density,
+                Spectrum sigma_a, Spectrum sigma_s, PhaseFunction phaseF, Float density,
                 Float wispiness, Float frequency, Allocator alloc)
         : bounds(bounds),
           renderFromMedium(renderFromMedium),
           sigma_a_spec(sigma_a, alloc),
           sigma_s_spec(sigma_s, alloc),
-          phase(g),
+          phase(phaseF),
           density(density),
           wispiness(wispiness),
           frequency(frequency) {}
@@ -497,7 +497,7 @@ class CloudMedium {
         SampledSpectrum sigma_a = density * sigma_a_spec.Sample(lambda);
         SampledSpectrum sigma_s = density * sigma_s_spec.Sample(lambda);
 
-        return MediumProperties{sigma_a, sigma_s, &phase, SampledSpectrum(0.f)};
+        return MediumProperties{sigma_a, sigma_s, phase, SampledSpectrum(0.f)};
     }
 
     PBRT_CPU_GPU
@@ -549,7 +549,7 @@ class CloudMedium {
     // CloudMedium Private Members
     Bounds3f bounds;
     Transform renderFromMedium;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
     Float density, wispiness, frequency;
 };
@@ -637,7 +637,7 @@ class NanoVDBMedium {
     std::string ToString() const;
 
     NanoVDBMedium(const Transform &renderFromMedium, Spectrum sigma_a, Spectrum sigma_s,
-                  Float sigmaScale, Float g, nanovdb::GridHandle<NanoVDBBuffer> dg,
+                  Float sigmaScale, PhaseFunction phaseF, nanovdb::GridHandle<NanoVDBBuffer> dg,
                   nanovdb::GridHandle<NanoVDBBuffer> tg, Float LeScale,
                   Float temperatureOffset, Float temperatureScale, Allocator alloc);
 
@@ -658,7 +658,7 @@ class NanoVDBMedium {
         using Sampler = nanovdb::SampleFromVoxels<nanovdb::FloatGrid::TreeType, 1, false>;
         Float d = Sampler(densityFloatGrid->tree())(pIndex);
 
-        return MediumProperties{sigma_a * d, sigma_s * d, &phase, Le(p, lambda)};
+        return MediumProperties{sigma_a * d, sigma_s * d, phase, Le(p, lambda)};
     }
 
     PBRT_CPU_GPU
@@ -699,7 +699,7 @@ class NanoVDBMedium {
     Bounds3f bounds;
     Transform renderFromMedium;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     MajorantGrid majorantGrid;
     nanovdb::GridHandle<NanoVDBBuffer> densityGrid;
     nanovdb::GridHandle<NanoVDBBuffer> temperatureGrid;
