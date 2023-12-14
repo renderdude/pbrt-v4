@@ -272,16 +272,15 @@ void RayIntegrator::EvaluatePixelSample(Point2i pPixel, int sampleIndex, Sampler
             L = SampledSpectrum(0.f);
         }
 
+        PBRT_DBG("%s\n",
+                 StringPrintf("Camera sample: %s -> ray %s -> L = %s, visibleSurface %s",
+                              cameraSample, cameraRay->ray, L,
+                              (visibleSurface ? visibleSurface.ToString() : "(none)"))
+                     .c_str());
+    } else {
         PBRT_DBG(
             "%s\n",
-            StringPrintf("Camera sample: %s -> ray %s -> L = %s, visibleSurface %s",
-                         cameraSample, cameraRay->ray, L,
-                         (visibleSurface ? visibleSurface.ToString() : "(none)"))
-                .c_str());
-    } else {
-	    PBRT_DBG("%s\n",
-	             StringPrintf("Camera sample: %s -> no ray generated", cameraSample)
-			             .c_str());
+            StringPrintf("Camera sample: %s -> no ray generated", cameraSample).c_str());
     }
     // Add camera ray's contribution to image
     camera.GetFilm().AddSample(pPixel, L, lambda, &visibleSurface,
@@ -1317,7 +1316,8 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
         // Update _f_hat_ and _scatterPDF_ accounting for the phase function
         CHECK(intr.IsMediumInteraction());
         PhaseFunction phase = intr.AsMedium().phase;
-        f_hat = SampledSpectrum(phase.p(wo, wi));
+        Spectrum spec = phase.p(wo, wi);
+        f_hat = spec.Sample(lambda);
         scatterPDF = phase.PDF(wo, wi);
     }
     if (!f_hat)
@@ -1453,8 +1453,7 @@ retry:
         // Divide by pi so that fully visible is one.
         Ray r = isect.SpawnRay(wi);
         if (!IntersectP(r, maxDist)) {
-            return illumScale * illuminant.Sample(lambda) *
-                   Dot(wi, n) / (Pi * pdf);
+            return illumScale * illuminant.Sample(lambda) * Dot(wi, n) / (Pi * pdf);
         }
     }
     return SampledSpectrum(0.);
@@ -1626,7 +1625,7 @@ struct Vertex {
 
     bool IsOnSurface() const { return ng() != Normal3f(); }
 
-    SampledSpectrum f(const Vertex &next, TransportMode mode) const {
+    SampledSpectrum f(const Vertex &next, TransportMode mode, SampledWavelengths& lambda) const {
         Vector3f wi = next.p() - p();
         if (LengthSquared(wi) == 0)
             return {};
@@ -1634,8 +1633,10 @@ struct Vertex {
         switch (type) {
         case VertexType::Surface:
             return bsdf.f(si.wo, wi, mode);
-        case VertexType::Medium:
-            return SampledSpectrum(mi.phase.p(mi.wo, wi));
+        case VertexType::Medium: {
+            Spectrum spec = mi.phase.p(mi.wo, wi);
+            return spec.Sample(lambda);
+        }
         default:
             LOG_FATAL("Vertex::f(): Unimplemented");
             return SampledSpectrum(0.f);
@@ -1767,7 +1768,7 @@ struct Vertex {
         else if (type == VertexType::Surface)
             pdf = bsdf.PDF(wp, wn);
         else if (type == VertexType::Medium)
-            pdf = mi.phase.p(wp, wn);
+            pdf = mi.phase.PDF(wp, wn);
         else
             LOG_FATAL("Vertex::PDF(): Unimplemented");
 
@@ -2179,14 +2180,15 @@ Float MISWeight(const Integrator &integrator, Camera camera, Vertex *lightVertic
 
     Film film = camera.GetFilm();
     Float splatScale = Float(film.FullResolution().x) * Float(film.FullResolution().y) /
-        Float(film.PixelBounds().Area());
+                       Float(film.PixelBounds().Area());
 
     // Consider hypothetical connection strategies along the camera subpath
     Float ri = 1;
     for (int i = t - 1; i > 0; --i) {
         ri *= remap0(cameraVertices[i].pdfRev) / remap0(cameraVertices[i].pdfFwd);
         // See https://github.com/mmp/pbrt-v4/issues/347
-        if (i == 1) ri /= splatScale;
+        if (i == 1)
+            ri /= splatScale;
         if (!cameraVertices[i].delta && !cameraVertices[i - 1].delta)
             sumRi += ri;
     }
@@ -2202,7 +2204,8 @@ Float MISWeight(const Integrator &integrator, Camera camera, Vertex *lightVertic
     }
 
     // See https://github.com/mmp/pbrt-v4/issues/347
-    if (t == 1) sumRi /= splatScale;
+    if (t == 1)
+        sumRi /= splatScale;
     return 1 / (1 + sumRi);
 }
 
@@ -2302,11 +2305,12 @@ SampledSpectrum BDPTIntegrator::Li(RayDifferential ray, SampledWavelengths &lamb
                     // scenes where the camera has a finite aperture, since
                     // we don't have the CameraSample either so just have
                     // to pass (0.5,0.5) in for the lens sample...
-                    pstd::optional<CameraWiSample> cs =
-                        camera.SampleWi(Interaction(ray(100.f), nullptr), Point2f(0.5f, 0.5f), lambda);
+                    pstd::optional<CameraWiSample> cs = camera.SampleWi(
+                        Interaction(ray(100.f), nullptr), Point2f(0.5f, 0.5f), lambda);
                     CHECK_RARE(1e-3, !cs);
                     if (cs)
-                        weightFilms[BufferIndex(s, t)].AddSplat(cs->pRaster, value, lambda);
+                        weightFilms[BufferIndex(s, t)].AddSplat(cs->pRaster, value,
+                                                                lambda);
                 }
             }
             if (t != 1)
@@ -2349,7 +2353,7 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
                 *pRaster = cs->pRaster;
                 // Initialize dynamically sampled vertex and _L_ for $t=1$ case
                 sampled = Vertex::CreateCamera(camera, cs->pLens, cs->Wi / cs->pdf);
-                L = qs.beta * qs.f(sampled, TransportMode::Importance) * sampled.beta;
+                L = qs.beta * qs.f(sampled, TransportMode::Importance, lambda) * sampled.beta;
                 if (qs.IsOnSurface())
                     L *= AbsDot(cs->wi, qs.ns());
                 DCHECK(!L.HasNaNs());
@@ -2359,7 +2363,7 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
                     // See https://github.com/mmp/pbrt-v4/issues/347
                     Film film = camera.GetFilm();
                     L *= Float(film.FullResolution().x) * Float(film.FullResolution().y) /
-                        Float(film.PixelBounds().Area());
+                         Float(film.PixelBounds().Area());
                 }
             }
         }
@@ -2396,7 +2400,7 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
                         ei, lightWeight->L / (lightWeight->pdf * p_l), 0);
                     sampled.pdfFwd = sampled.PDFLightOrigin(integrator.infiniteLights, pt,
                                                             lightSampler);
-                    L = pt.beta * pt.f(sampled, TransportMode::Radiance) * sampled.beta;
+                    L = pt.beta * pt.f(sampled, TransportMode::Radiance, lambda) * sampled.beta;
                     if (pt.IsOnSurface())
                         L *= AbsDot(lightWeight->wi, pt.ns());
                     // Only check visibility if the path would carry radiance.
@@ -2411,8 +2415,8 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
         // Handle all other bidirectional connection cases
         const Vertex &qs = lightVertices[s - 1], &pt = cameraVertices[t - 1];
         if (qs.IsConnectible() && pt.IsConnectible()) {
-            L = qs.beta * qs.f(pt, TransportMode::Importance) *
-                pt.f(qs, TransportMode::Radiance) * pt.beta;
+            L = qs.beta * qs.f(pt, TransportMode::Importance, lambda) *
+                pt.f(qs, TransportMode::Radiance, lambda) * pt.beta;
             PBRT_DBG("%s\n",
                      StringPrintf(
                          "General connect s: %d, t: %d, qs: %s, pt: %s, qs.f(pt): %s, "
@@ -2432,8 +2436,8 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
         ++zeroRadiancePaths;
     pathLength << s + t - 2;
     // Compute MIS weight for connection strategy
-    Float misWeight = L ? MISWeight(integrator, camera, lightVertices, cameraVertices, sampled, s,
-                                    t, lightSampler)
+    Float misWeight = L ? MISWeight(integrator, camera, lightVertices, cameraVertices,
+                                    sampled, s, t, lightSampler)
                         : 0.f;
     PBRT_DBG("MIS weight for (s,t) = (%d, %d) connection: %f\n", s, t, misWeight);
     DCHECK(!IsNaN(misWeight));

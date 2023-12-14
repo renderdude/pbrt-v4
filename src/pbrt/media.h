@@ -24,6 +24,7 @@
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/GridHandle.h>
 #include <nanovdb/util/SampleFromVoxels.h>
+#include <string>
 #ifdef PBRT_BUILD_GPU_RENDERER
 #include <nanovdb/util/CudaDeviceBuffer.h>
 #endif  // PBRT_BUILD_GPU_RENDERER
@@ -48,7 +49,7 @@ class HGPhaseFunction {
     HGPhaseFunction(Float g) : g(g) {}
 
     PBRT_CPU_GPU
-    Float p(Vector3f wo, Vector3f wi) const { return HenyeyGreenstein(Dot(wo, wi), g); }
+    Spectrum p(Vector3f wo, Vector3f wi) const { return new ConstantSpectrum(HenyeyGreenstein(Dot(wo, wi), g)); }
 
     PBRT_CPU_GPU
     pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const {
@@ -58,7 +59,7 @@ class HGPhaseFunction {
     }
 
     PBRT_CPU_GPU
-    Float PDF(Vector3f wo, Vector3f wi) const { return p(wo, wi); }
+    Float PDF(Vector3f wo, Vector3f wi) const { return HenyeyGreenstein(Dot(wo, wi), g); }
 
     static const char *Name() { return "Henyey-Greenstein"; }
 
@@ -75,10 +76,10 @@ class TabulatedPhaseFunction {
     // TabulatedPhaseFunction Public Methods
     TabulatedPhaseFunction() = default;
     PBRT_CPU_GPU
-    TabulatedPhaseFunction(Float g) : g(g) {}
+    TabulatedPhaseFunction(std::string filename);
 
     PBRT_CPU_GPU
-    Float p(Vector3f wo, Vector3f wi) const { return HenyeyGreenstein(Dot(wo, wi), g); }
+    Spectrum p(Vector3f wo, Vector3f wi) const;
 
     PBRT_CPU_GPU
     pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const {
@@ -88,7 +89,7 @@ class TabulatedPhaseFunction {
     }
 
     PBRT_CPU_GPU
-    Float PDF(Vector3f wo, Vector3f wi) const { return p(wo, wi); }
+    Float PDF(Vector3f wo, Vector3f wi) const;
 
     static const char *Name() { return "Tabulate Phase Function"; }
 
@@ -97,6 +98,8 @@ class TabulatedPhaseFunction {
   private:
     // TabulatedPhaseFunction Private Members
     Float g;
+    // Indexed by angle
+    std::map<Float, PiecewiseLinearSpectrum> _phase_values;
 };
 
 // MediumProperties Definition
@@ -708,7 +711,7 @@ class NanoVDBMedium {
     Float LeScale, temperatureOffset, temperatureScale;
 };
 
-inline Float PhaseFunction::p(Vector3f wo, Vector3f wi) const {
+inline Spectrum PhaseFunction::p(Vector3f wo, Vector3f wi) const {
     auto p = [&](auto ptr) { return ptr->p(wo, wi); };
     return Dispatch(p);
 }

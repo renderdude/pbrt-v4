@@ -23,6 +23,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include "pbrt/base/medium.h"
 
 namespace pbrt {
 
@@ -435,11 +436,13 @@ class LayeredBxDF {
     LayeredBxDF() = default;
     PBRT_CPU_GPU
     LayeredBxDF(TopBxDF top, BottomBxDF bottom, Float thickness,
-                const SampledSpectrum &albedo, Float g, int maxDepth, int nSamples)
+                const SampledSpectrum &albedo, PhaseFunction phaseF, 
+                SampledWavelengths lambda, int maxDepth, int nSamples)
         : top(top),
           bottom(bottom),
           thickness(std::max(thickness, std::numeric_limits<Float>::min())),
-          g(g),
+          phase(phaseF),
+          lambda(lambda),
           albedo(albedo),
           maxDepth(maxDepth),
           nSamples(nSamples) {}
@@ -532,7 +535,6 @@ class LayeredBxDF {
             SampledSpectrum beta = wos->f * AbsCosTheta(wos->wi) / wos->pdf;
             Float z = enteredTop ? thickness : 0;
             Vector3f w = wos->wi;
-            HGPhaseFunction phase(g);
 
             for (int depth = 0; depth < maxDepth; ++depth) {
                 // Sample next event for layered BSDF evaluation random walk
@@ -569,7 +571,8 @@ class LayeredBxDF {
                         Float wt = 1;
                         if (!IsSpecular(exitInterface.Flags()))
                             wt = PowerHeuristic(1, wis->pdf, 1, phase.PDF(-w, -wis->wi));
-                        f += beta * albedo * phase.p(-w, -wis->wi) * wt *
+                        Spectrum spec = phase.p(-w, -wis->wi);
+                        f += beta * albedo * spec.Sample(lambda) * wt *
                              Tr(zp - exitZ, wis->wi) * wis->f / wis->pdf;
 
                         // Sample phase function and update layered path state
@@ -689,7 +692,6 @@ class LayeredBxDF {
         SampledSpectrum f = bs->f * AbsCosTheta(bs->wi);
         Float pdf = bs->pdf;
         Float z = enteredTop ? thickness : 0;
-        HGPhaseFunction phase(g);
 
         for (int depth = 0; depth < maxDepth; ++depth) {
             // Follow random walk through layers to sample layered BSDF
@@ -894,7 +896,9 @@ class LayeredBxDF {
     // LayeredBxDF Private Members
     TopBxDF top;
     BottomBxDF bottom;
-    Float thickness, g;
+    Float thickness;
+    PhaseFunction phase;
+    SampledWavelengths lambda;
     SampledSpectrum albedo;
     int maxDepth, nSamples;
 };

@@ -180,7 +180,8 @@ class DielectricMaterial {
 
     template <typename TextureEvaluator>
     PBRT_CPU_GPU DielectricBxDF GetBxDF(TextureEvaluator texEval, MaterialEvalContext ctx,
-                                        SampledWavelengths &lambda) const {
+                                        SampledWavelengths &lambda,
+                                        Allocator alloc) const {
         // Compute index of refraction for dielectric material
         Float sampledEta = eta(lambda[0]);
         if (!eta.template Is<ConstantSpectrum>())
@@ -225,7 +226,8 @@ class ThinDielectricMaterial {
     template <typename TextureEvaluator>
     PBRT_CPU_GPU ThinDielectricBxDF GetBxDF(TextureEvaluator texEval,
                                             MaterialEvalContext ctx,
-                                            SampledWavelengths &lambda) const {
+                                            SampledWavelengths &lambda,
+                                            Allocator alloc) const {
         // Compute index of refraction for dielectric material
         Float sampledEta = eta(lambda[0]);
         if (!eta.template Is<ConstantSpectrum>())
@@ -337,7 +339,7 @@ class MixMaterial {
 
     template <typename TextureEvaluator>
     PBRT_CPU_GPU void GetBxDF(TextureEvaluator texEval, MaterialEvalContext ctx,
-                              SampledWavelengths &lambda) const {
+                              SampledWavelengths &lambda, Allocator alloc) const {
 #ifndef PBRT_IS_GPU_CODE
         LOG_FATAL("MixMaterial::GetBxDF() shouldn't be called");
 #endif
@@ -378,7 +380,7 @@ class HairMaterial {
 
     template <typename TextureEvaluator>
     PBRT_CPU_GPU HairBxDF GetBxDF(TextureEvaluator texEval, MaterialEvalContext ctx,
-                                  SampledWavelengths &lambda) const {
+                                  SampledWavelengths &lambda, Allocator alloc) const {
         Float bm = std::max<Float>(1e-2, std::min<Float>(1.0, texEval(beta_m, ctx)));
         Float bn = std::max<Float>(1e-2, std::min<Float>(1.0, texEval(beta_n, ctx)));
         Float a = texEval(alpha, ctx);
@@ -463,7 +465,7 @@ class DiffuseMaterial {
 
     template <typename TextureEvaluator>
     PBRT_CPU_GPU DiffuseBxDF GetBxDF(TextureEvaluator texEval, MaterialEvalContext ctx,
-                                     SampledWavelengths &lambda) const {
+                                     SampledWavelengths &lambda, Allocator alloc) const {
         SampledSpectrum r = Clamp(texEval(reflectance, ctx, lambda), 0, 1);
         return DiffuseBxDF(r);
     }
@@ -489,7 +491,8 @@ class ConductorMaterial {
 
     template <typename TextureEvaluator>
     PBRT_CPU_GPU ConductorBxDF GetBxDF(TextureEvaluator texEval, MaterialEvalContext ctx,
-                                       SampledWavelengths &lambda) const {
+                                       SampledWavelengths &lambda,
+                                       Allocator alloc) const {
         // Return BSDF for _ConductorMaterial_
         Float uRough = texEval(uRoughness, ctx), vRough = texEval(vRoughness, ctx);
         if (remapRoughness) {
@@ -585,7 +588,8 @@ class CoatedDiffuseMaterial {
     template <typename TextureEvaluator>
     PBRT_CPU_GPU CoatedDiffuseBxDF GetBxDF(TextureEvaluator texEval,
                                            const MaterialEvalContext &ctx,
-                                           SampledWavelengths &lambda) const;
+                                           SampledWavelengths &lambda,
+                                           Allocator alloc) const;
 
     PBRT_CPU_GPU
     FloatTexture GetDisplacement() const { return displacement; }
@@ -659,7 +663,8 @@ class CoatedConductorMaterial {
     template <typename TextureEvaluator>
     PBRT_CPU_GPU CoatedConductorBxDF GetBxDF(TextureEvaluator texEval,
                                              const MaterialEvalContext &ctx,
-                                             SampledWavelengths &lambda) const;
+                                             SampledWavelengths &lambda,
+                                             Allocator alloc) const;
 
     PBRT_CPU_GPU
     FloatTexture GetDisplacement() const { return displacement; }
@@ -730,7 +735,8 @@ class SubsurfaceMaterial {
     template <typename TextureEvaluator>
     PBRT_CPU_GPU DielectricBxDF GetBxDF(TextureEvaluator texEval,
                                         const MaterialEvalContext &ctx,
-                                        SampledWavelengths &lambda) const {
+                                        SampledWavelengths &lambda,
+                                        Allocator alloc) const {
         // Initialize BSDF for _SubsurfaceMaterial_
 
         Float urough = texEval(uRoughness, ctx), vrough = texEval(vRoughness, ctx);
@@ -814,7 +820,8 @@ class DiffuseTransmissionMaterial {
     template <typename TextureEvaluator>
     PBRT_CPU_GPU DiffuseTransmissionBxDF GetBxDF(TextureEvaluator texEval,
                                                  MaterialEvalContext ctx,
-                                                 SampledWavelengths &lambda) const {
+                                                 SampledWavelengths &lambda,
+                                                 Allocator alloc) const {
         SampledSpectrum r = Clamp(scale * texEval(reflectance, ctx, lambda), 0, 1);
         SampledSpectrum t = Clamp(scale * texEval(transmittance, ctx, lambda), 0, 1);
         return DiffuseTransmissionBxDF(r, t);
@@ -853,7 +860,7 @@ class MeasuredMaterial {
     // MeasuredMaterial Public Methods
     template <typename TextureEvaluator>
     PBRT_CPU_GPU MeasuredBxDF GetBxDF(TextureEvaluator texEval, MaterialEvalContext ctx,
-                                      SampledWavelengths &lambda) const {
+                                      SampledWavelengths &lambda, Allocator alloc) const {
         return MeasuredBxDF(brdf, lambda);
     }
 
@@ -905,7 +912,7 @@ inline BSDF Material::GetBSDF(TextureEvaluator texEval, MaterialEvalContext ctx,
         else {
             // Allocate memory for _ConcreteBxDF_ and return _BSDF_ for material
             ConcreteBxDF *bxdf = scratchBuffer.Alloc<ConcreteBxDF>();
-            *bxdf = mtl->GetBxDF(texEval, ctx, lambda);
+            *bxdf = mtl->GetBxDF(texEval, ctx, lambda, Allocator());
             return BSDF(ctx.ns, ctx.dpdus, bxdf);
         }
     };

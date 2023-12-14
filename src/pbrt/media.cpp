@@ -18,6 +18,12 @@
 #include <pbrt/util/stats.h>
 
 #include <nanovdb/NanoVDB.h>
+#include <string>
+#include <vector>
+#include "pbrt/util/check.h"
+#include "pbrt/util/math.h"
+#include "pbrt/util/pstd.h"
+#include "pbrt/util/spectrum.h"
 #define NANOVDB_USE_ZIP 1
 #include <nanovdb/util/IO.h>
 
@@ -72,6 +78,39 @@ std::string HGPhaseFunction::ToString() const {
 }
 
 // TabulatedPhaseFunction Method Definitions
+TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
+    std::vector<Float> contents = ReadFloatFile(filename);
+    CHECK(!contents.empty());
+    int num_wavelen = (int)(contents[0]);
+    // Convert um to nm
+    for (auto i = 1; i <= num_wavelen; i++) {
+        contents[i] *= 1000.0;
+    }
+    pstd::span<Float> all_elements(contents);
+    auto lambdas = all_elements.subspan(1, num_wavelen);
+    size_t index = num_wavelen + 1;
+    while (index < contents.size()) {
+        // Easier to store the phase values as a function of cos(<scattering_angle>)
+        // rather than store via the angle and convert every request to `p'
+        Float angle = cos(Radians(contents[index]));
+        index++;
+        auto sub_values = all_elements.subspan(index, num_wavelen);
+        _phase_values[angle] = PiecewiseLinearSpectrum(lambdas, sub_values);
+        index += num_wavelen;
+    }
+}
+
+Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {
+    auto cos_theta = Dot(wo, wi);
+    auto lower_bound = _phase_values.lower_bound(cos_theta);
+    auto upper_bound = _phase_values.upper_bound(cos_theta);
+}
+
+Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
+    return HenyeyGreenstein(Dot(wo, wi), g);
+}
+
+
 std::string TabulatedPhaseFunction::ToString() const {
     return StringPrintf("[ TabulatedPhaseFunction g: %f ]", g);
 }
@@ -660,8 +699,15 @@ NanoVDBMedium *NanoVDBMedium::Create(const ParameterDictionary &parameters,
         "temperatureoffset", parameters.GetOneFloat("temperaturecutoff", 0.f));
     Float temperatureScale = parameters.GetOneFloat("temperaturescale", 1.f);
 
-    Float g = parameters.GetOneFloat("g", 0.);
-    PhaseFunction phase = alloc.new_object<HGPhaseFunction>(g);
+    PhaseFunction phase;
+    std::string phase_file = parameters.GetOneString("tablulated_phase", "");
+    if (phase_file.empty()) {
+        Float g = parameters.GetOneFloat("g", 0.);
+        phase = alloc.new_object<HGPhaseFunction>(g);
+    }
+    else {
+        phase = alloc.new_object<TabulatedPhaseFunction>(phase_file);
+    }
 
     Spectrum sigma_a =
         parameters.GetOneSpectrum("sigma_a", nullptr, SpectrumType::Unbounded, alloc);
