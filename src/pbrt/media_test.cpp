@@ -25,7 +25,7 @@ TEST(HenyeyGreenstein, SamplingMatch) {
             // Phase function is normalized, and the sampling method should be
             // exact.
             EXPECT_EQ(ps->p, ps->pdf);
-            EXPECT_NEAR(ps->p, hg.p(wo, ps->wi), 1e-4f) << "Failure with g = " << g;
+            EXPECT_NEAR(ps->p, hg.p(wo, ps->wi).MaxValue(), 1e-4f) << "Failure with g = " << g;
         }
     }
 }
@@ -72,7 +72,7 @@ TEST(HenyeyGreenstein, Normalized) {
         int nSamples = sqrtSamples * sqrtSamples;
         for (Point2f u : Stratified2D(sqrtSamples, sqrtSamples)) {
             Vector3f wi = SampleUniformSphere(u);
-            sum += hg.p(wo, wi);
+            sum += hg.p(wo, wi).MaxValue();
         }
         // Phase function should integrate to 1/4pi.
         EXPECT_NEAR(sum / nSamples, 1. / (4. * Pi), 1e-3f);
@@ -90,7 +90,7 @@ TEST(HenyeyGreenstein, g) {
         for (Point2f u : Stratified2D(sqrtSamples, sqrtSamples)) {
             Vector3f wi = SampleUniformSphere(u);
             // Negate dot to match direction convention
-            sum += hg.p(wo, wi) * -Dot(wo, wi);
+            sum += hg.p(wo, wi).MaxValue() * -Dot(wo, wi);
         }
         Float gEst = sum / (nSamples * UniformSpherePDF());
         EXPECT_NEAR(g, gEst, .01);
