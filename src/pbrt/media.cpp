@@ -20,8 +20,11 @@
 #include <nanovdb/NanoVDB.h>
 #include <string>
 #include <vector>
+#include "pbrt/pbrt.h"
+#include "pbrt/shapes.h"
 #include "pbrt/util/check.h"
 #include "pbrt/util/math.h"
+#include "pbrt/util/parallel.h"
 #include "pbrt/util/pstd.h"
 #include "pbrt/util/spectrum.h"
 #define NANOVDB_USE_ZIP 1
@@ -31,6 +34,8 @@
 #include <cmath>
 
 namespace pbrt {
+
+static ThreadLocal<PiecewiseLinearSpectrum> *_result;
 
 std::string MediumInterface::ToString() const {
     return StringPrintf("[ MediumInterface inside: %s outside: %s ]",
@@ -79,6 +84,9 @@ std::string HGPhaseFunction::ToString() const {
 
 // TabulatedPhaseFunction Method Definitions
 TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
+    _result = new ThreadLocal<PiecewiseLinearSpectrum>(
+        (([]() { return PiecewiseLinearSpectrum(); })));
+
     std::vector<Float> contents = ReadFloatFile(filename);
     CHECK(!contents.empty());
     int num_wavelen = (int)(contents[0]);
@@ -88,15 +96,49 @@ TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
     }
     pstd::span<Float> all_elements(contents);
     auto lambdas = all_elements.subspan(1, num_wavelen);
+    _lambdas = std::vector<Float>(lambdas.begin(), lambdas.end());
     size_t index = num_wavelen + 1;
+    ParsedParameter *param = new ParsedParameter(FileLoc());
+    param->name = "P";
+    param->type = "point3";
     while (index < contents.size()) {
         // Easier to store the phase values as a function of cos(<scattering_angle>)
         // rather than store via the angle and convert every request to `p'
         Float angle = cos(Radians(contents[index]));
         index++;
         auto sub_values = all_elements.subspan(index, num_wavelen);
+        for (int i = 0; i < num_wavelen; i++) {
+            param->AddFloat(angle);
+            param->AddFloat(_lambdas[i]);
+            param->AddFloat(sub_values[i]);
+        }
         _phase_values[angle] = PiecewiseLinearSpectrum(lambdas, sub_values);
         index += num_wavelen;
+    }
+    ParsedParameterVector params;
+    params.push_back(param);
+    param = new ParsedParameter(FileLoc());
+    param->name = "indices";
+    param->type = "integer";
+    for (auto i = 0; i < _phase_values.size() - 1; i++) {
+        int index = i * num_wavelen;
+        for (auto j = 0; j < num_wavelen - 1; j++) {
+            param->AddInt(index);
+            param->AddInt(index + 1);
+            param->AddInt((index + 1) + num_wavelen);
+            param->AddInt(index + num_wavelen);
+            index++;
+        }
+    }
+    params.push_back(param);
+    ParameterDictionary dict(params, RGBColorSpace::sRGB);
+    Transform renderFromObject;
+    FileLoc loc;
+    auto mesh =
+        BilinearPatch::CreateMesh(&renderFromObject, false, dict, &loc, Allocator());
+    auto patches = BilinearPatch::CreatePatches(mesh, Allocator());
+    for (auto patch : patches) {
+        _total_area += patch.Area();
     }
 }
 
@@ -104,12 +146,55 @@ Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {
     auto cos_theta = Dot(wo, wi);
     auto lower_bound = _phase_values.lower_bound(cos_theta);
     auto upper_bound = _phase_values.upper_bound(cos_theta);
+    // If lower_bound and upper_bound are the same, then cos_theta is not in the map
+    if (lower_bound == upper_bound && lower_bound != _phase_values.begin()) {
+        lower_bound--;  // Move lower_bound below cos_theta
+        auto lower_key = lower_bound->first;
+        auto upper_key = upper_bound->first;
+        float interpolant = (cos_theta - lower_key) / (upper_key - lower_key);
+
+        PiecewiseLinearSpectrum &result = _result->Get();
+        lower_bound->second.interpolate(interpolant, upper_bound->second, result);
+        return &result;
+    } else {
+        return &(lower_bound->second);
+    }
 }
 
 Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
-    return HenyeyGreenstein(Dot(wo, wi), g);
+    auto cos_theta = Dot(wo, wi);
+    auto lower_bound = _phase_values.lower_bound(cos_theta);
+    auto upper_bound = _phase_values.upper_bound(cos_theta);
+    PiecewiseLinearSpectrum result;
+    // If lower_bound and upper_bound are the same, then cos_theta is not in the map
+    if (lower_bound == upper_bound && lower_bound != _phase_values.begin()) {
+        lower_bound--;  // Move lower_bound below cos_theta
+        auto lower_key = lower_bound->first;
+        auto upper_key = upper_bound->first;
+        float interpolant = (cos_theta - lower_key) / (upper_key - lower_key);
+
+        lower_bound->second.interpolate(interpolant, upper_bound->second, result);
+    } else {
+        result = lower_bound->second;
+    }
+
+    return result.arclength() / _total_area;
 }
 
+pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo,
+                                                                     Point2f u) const {
+    Float pdf;
+    Float cosTheta = 1 - 2 * u[0];
+
+    // Compute direction _wi_ for Henyey--Greenstein sample
+    Float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
+    Float phi = 2 * Pi * u[1];
+    Frame wFrame = Frame::FromZ(wo);
+    Vector3f wi = wFrame.FromLocal(SphericalDirection(sinTheta, cosTheta, phi));
+
+    pdf = PDF(wo, wi);
+    return PhaseFunctionSample{pdf, wi, pdf};
+}
 
 std::string TabulatedPhaseFunction::ToString() const {
     return StringPrintf("[ TabulatedPhaseFunction g: %f ]", g);
@@ -704,8 +789,7 @@ NanoVDBMedium *NanoVDBMedium::Create(const ParameterDictionary &parameters,
     if (phase_file.empty()) {
         Float g = parameters.GetOneFloat("g", 0.);
         phase = alloc.new_object<HGPhaseFunction>(g);
-    }
-    else {
+    } else {
         phase = alloc.new_object<TabulatedPhaseFunction>(phase_file);
     }
 

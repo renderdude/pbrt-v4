@@ -82,12 +82,8 @@ class TabulatedPhaseFunction {
     Spectrum p(Vector3f wo, Vector3f wi) const;
 
     PBRT_CPU_GPU
-    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const {
-        Float pdf;
-        Vector3f wi = SampleHenyeyGreenstein(wo, g, u, &pdf);
-        return PhaseFunctionSample{pdf, wi, pdf};
-    }
-
+    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const;
+    
     PBRT_CPU_GPU
     Float PDF(Vector3f wo, Vector3f wi) const;
 
@@ -98,7 +94,9 @@ class TabulatedPhaseFunction {
   private:
     // TabulatedPhaseFunction Private Members
     Float g;
-    // Indexed by angle
+    Float _total_area = 0;
+    std::vector<Float> _lambdas;
+    // Indexed by cos(angle)
     std::map<Float, PiecewiseLinearSpectrum> _phase_values;
 };
 
