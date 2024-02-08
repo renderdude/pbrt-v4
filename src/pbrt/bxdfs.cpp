@@ -69,8 +69,8 @@ std::string DiffuseTransmissionBxDF::ToString() const {
 template <typename TopBxDF, typename BottomBxDF, bool twoSided>
 std::string LayeredBxDF<TopBxDF, BottomBxDF, twoSided>::ToString() const {
     return StringPrintf(
-        "[ LayeredBxDF top: %s bottom: %s thickness: %f albedo: %s g: %f ]", top, bottom,
-        thickness, albedo, g);
+        "[ LayeredBxDF top: %s bottom: %s thickness: %f albedo: %s phase: %s ]", top, bottom,
+        thickness, albedo, phase);
 }
 
 // DielectricBxDF Method Definitions

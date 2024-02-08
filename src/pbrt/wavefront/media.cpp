@@ -284,7 +284,8 @@ void WavefrontPathIntegrator::SampleMediumScattering(int wavefrontDepth) {
                     light.SampleLi(ctx, raySamples.direct.u, w.lambda, true);
                 if (ls && ls->L && ls->pdf > 0) {
                     Vector3f wi = ls->wi;
-                    SampledSpectrum beta = w.beta * w.phase->p(wo, wi);
+                    Spectrum spec = w.phase->p(wo, wi);
+                    SampledSpectrum beta = w.beta * spec.Sample(w.lambda);
 
                     PBRT_DBG("Phase phase beta %f %f %f %f\n", beta[0], beta[1], beta[2],
                              beta[3]);

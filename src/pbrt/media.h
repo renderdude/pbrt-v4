@@ -24,6 +24,7 @@
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/GridHandle.h>
 #include <nanovdb/util/SampleFromVoxels.h>
+#include <string>
 #ifdef PBRT_BUILD_GPU_RENDERER
 #include <nanovdb/util/CudaDeviceBuffer.h>
 #endif  // PBRT_BUILD_GPU_RENDERER
@@ -48,7 +49,7 @@ class HGPhaseFunction {
     HGPhaseFunction(Float g) : g(g) {}
 
     PBRT_CPU_GPU
-    Float p(Vector3f wo, Vector3f wi) const { return HenyeyGreenstein(Dot(wo, wi), g); }
+    Spectrum p(Vector3f wo, Vector3f wi) const { return new ConstantSpectrum(HenyeyGreenstein(Dot(wo, wi), g)); }
 
     PBRT_CPU_GPU
     pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const {
@@ -58,7 +59,7 @@ class HGPhaseFunction {
     }
 
     PBRT_CPU_GPU
-    Float PDF(Vector3f wo, Vector3f wi) const { return p(wo, wi); }
+    Float PDF(Vector3f wo, Vector3f wi) const { return HenyeyGreenstein(Dot(wo, wi), g); }
 
     static const char *Name() { return "Henyey-Greenstein"; }
 
@@ -67,6 +68,36 @@ class HGPhaseFunction {
   private:
     // HGPhaseFunction Private Members
     Float g;
+};
+
+// TabulatedPhaseFunction Definition
+class TabulatedPhaseFunction {
+  public:
+    // TabulatedPhaseFunction Public Methods
+    TabulatedPhaseFunction() = default;
+    PBRT_CPU_GPU
+    TabulatedPhaseFunction(std::string filename);
+
+    PBRT_CPU_GPU
+    Spectrum p(Vector3f wo, Vector3f wi) const;
+
+    PBRT_CPU_GPU
+    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const;
+    
+    PBRT_CPU_GPU
+    Float PDF(Vector3f wo, Vector3f wi) const;
+
+    static const char *Name() { return "Tabulate Phase Function"; }
+
+    std::string ToString() const;
+
+  private:
+    // TabulatedPhaseFunction Private Members
+    Float g;
+    Float _total_area = 0;
+    std::vector<Float> _lambdas;
+    // Indexed by cos(angle)
+    std::map<Float, PiecewiseLinearSpectrum> _phase_values;
 };
 
 // MediumProperties Definition
@@ -221,11 +252,11 @@ class HomogeneousMedium {
 
     // HomogeneousMedium Public Methods
     HomogeneousMedium(Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, Spectrum Le,
-                      Float LeScale, Float g, Allocator alloc)
+                      Float LeScale, PhaseFunction phaseF, Allocator alloc)
         : sigma_a_spec(sigma_a, alloc),
           sigma_s_spec(sigma_s, alloc),
           Le_spec(Le, alloc),
-          phase(g) {
+          phase(phaseF) {
         sigma_a_spec.Scale(sigmaScale);
         sigma_s_spec.Scale(sigmaScale);
         Le_spec.Scale(LeScale);
@@ -242,7 +273,7 @@ class HomogeneousMedium {
         SampledSpectrum sigma_a = sigma_a_spec.Sample(lambda);
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
         SampledSpectrum Le = Le_spec.Sample(lambda);
-        return MediumProperties{sigma_a, sigma_s, &phase, Le};
+        return MediumProperties{sigma_a, sigma_s, phase, Le};
     }
 
     PBRT_CPU_GPU
@@ -258,7 +289,7 @@ class HomogeneousMedium {
   private:
     // HomogeneousMedium Private Data
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec, Le_spec;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
 };
 
 // GridMedium Definition
@@ -269,7 +300,7 @@ class GridMedium {
 
     // GridMedium Public Methods
     GridMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
-               Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, Float g,
+               Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, PhaseFunction phaseF,
                SampledGrid<Float> density, pstd::optional<SampledGrid<Float>> temperature,
                Float temperatureScale, Float temperatureOffset,
                Spectrum Le, SampledGrid<Float> LeScale, Allocator alloc);
@@ -315,7 +346,7 @@ class GridMedium {
             }
         }
 
-        return MediumProperties{sigma_a, sigma_s, &phase, Le};
+        return MediumProperties{sigma_a, sigma_s, phase, Le};
     }
 
     PBRT_CPU_GPU
@@ -342,7 +373,7 @@ class GridMedium {
     Transform renderFromMedium;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
     SampledGrid<Float> densityGrid;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     pstd::optional<SampledGrid<Float>> temperatureGrid;
     DenselySampledSpectrum Le_spec;
     SampledGrid<Float> LeScale;
@@ -358,7 +389,7 @@ class RGBGridMedium {
     using MajorantIterator = DDAMajorantIterator;
 
     // RGBGridMedium Public Methods
-    RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium, Float g,
+    RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium, PhaseFunction phaseF,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_a,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_s,
                   Float sigmaScale, pstd::optional<SampledGrid<RGBIlluminantSpectrum>> Le,
@@ -397,7 +428,7 @@ class RGBGridMedium {
             Le = LeScale * LeGrid->Lookup(p, convert);
         }
 
-        return MediumProperties{sigma_a, sigma_s, &phase, Le};
+        return MediumProperties{sigma_a, sigma_s, phase, Le};
     }
 
     PBRT_CPU_GPU
@@ -420,7 +451,7 @@ class RGBGridMedium {
     Transform renderFromMedium;
     pstd::optional<SampledGrid<RGBIlluminantSpectrum>> LeGrid;
     Float LeScale;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_aGrid, sigma_sGrid;
     Float sigmaScale;
     MajorantGrid majorantGrid;
@@ -446,13 +477,13 @@ class CloudMedium {
     }
 
     CloudMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
-                Spectrum sigma_a, Spectrum sigma_s, Float g, Float density,
+                Spectrum sigma_a, Spectrum sigma_s, PhaseFunction phaseF, Float density,
                 Float wispiness, Float frequency, Allocator alloc)
         : bounds(bounds),
           renderFromMedium(renderFromMedium),
           sigma_a_spec(sigma_a, alloc),
           sigma_s_spec(sigma_s, alloc),
-          phase(g),
+          phase(phaseF),
           density(density),
           wispiness(wispiness),
           frequency(frequency) {}
@@ -467,7 +498,7 @@ class CloudMedium {
         SampledSpectrum sigma_a = density * sigma_a_spec.Sample(lambda);
         SampledSpectrum sigma_s = density * sigma_s_spec.Sample(lambda);
 
-        return MediumProperties{sigma_a, sigma_s, &phase, SampledSpectrum(0.f)};
+        return MediumProperties{sigma_a, sigma_s, phase, SampledSpectrum(0.f)};
     }
 
     PBRT_CPU_GPU
@@ -519,7 +550,7 @@ class CloudMedium {
     // CloudMedium Private Members
     Bounds3f bounds;
     Transform renderFromMedium;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
     Float density, wispiness, frequency;
 };
@@ -607,7 +638,7 @@ class NanoVDBMedium {
     std::string ToString() const;
 
     NanoVDBMedium(const Transform &renderFromMedium, Spectrum sigma_a, Spectrum sigma_s,
-                  Float sigmaScale, Float g, nanovdb::GridHandle<NanoVDBBuffer> dg,
+                  Float sigmaScale, PhaseFunction phaseF, nanovdb::GridHandle<NanoVDBBuffer> dg,
                   nanovdb::GridHandle<NanoVDBBuffer> tg, Float LeScale,
                   Float temperatureOffset, Float temperatureScale, Allocator alloc);
 
@@ -628,7 +659,7 @@ class NanoVDBMedium {
         using Sampler = nanovdb::SampleFromVoxels<nanovdb::FloatGrid::TreeType, 1, false>;
         Float d = Sampler(densityFloatGrid->tree())(pIndex);
 
-        return MediumProperties{sigma_a * d, sigma_s * d, &phase, Le(p, lambda)};
+        return MediumProperties{sigma_a * d, sigma_s * d, phase, Le(p, lambda)};
     }
 
     PBRT_CPU_GPU
@@ -669,7 +700,7 @@ class NanoVDBMedium {
     Bounds3f bounds;
     Transform renderFromMedium;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
-    HGPhaseFunction phase;
+    PhaseFunction phase;
     MajorantGrid majorantGrid;
     nanovdb::GridHandle<NanoVDBBuffer> densityGrid;
     nanovdb::GridHandle<NanoVDBBuffer> temperatureGrid;
@@ -678,7 +709,7 @@ class NanoVDBMedium {
     Float LeScale, temperatureOffset, temperatureScale;
 };
 
-inline Float PhaseFunction::p(Vector3f wo, Vector3f wi) const {
+inline Spectrum PhaseFunction::p(Vector3f wo, Vector3f wi) const {
     auto p = [&](auto ptr) { return ptr->p(wo, wi); };
     return Dispatch(p);
 }

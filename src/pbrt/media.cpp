@@ -18,6 +18,15 @@
 #include <pbrt/util/stats.h>
 
 #include <nanovdb/NanoVDB.h>
+#include <string>
+#include <vector>
+#include "pbrt/pbrt.h"
+#include "pbrt/shapes.h"
+#include "pbrt/util/check.h"
+#include "pbrt/util/math.h"
+#include "pbrt/util/parallel.h"
+#include "pbrt/util/pstd.h"
+#include "pbrt/util/spectrum.h"
 #define NANOVDB_USE_ZIP 1
 #include <nanovdb/util/IO.h>
 
@@ -25,6 +34,8 @@
 #include <cmath>
 
 namespace pbrt {
+
+static ThreadLocal<PiecewiseLinearSpectrum> *_result;
 
 std::string MediumInterface::ToString() const {
     return StringPrintf("[ MediumInterface inside: %s outside: %s ]",
@@ -69,6 +80,124 @@ std::string DDAMajorantIterator::ToString() const {
 // HenyeyGreenstein Method Definitions
 std::string HGPhaseFunction::ToString() const {
     return StringPrintf("[ HGPhaseFunction g: %f ]", g);
+}
+
+// TabulatedPhaseFunction Method Definitions
+TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
+    _result = new ThreadLocal<PiecewiseLinearSpectrum>(
+        (([]() { return PiecewiseLinearSpectrum(); })));
+
+    std::vector<Float> contents = ReadFloatFile(filename);
+    CHECK(!contents.empty());
+    int num_wavelen = (int)(contents[0]);
+    // Convert um to nm
+    for (auto i = 1; i <= num_wavelen; i++) {
+        contents[i] *= 1000.0;
+    }
+    pstd::span<Float> all_elements(contents);
+    auto lambdas = all_elements.subspan(1, num_wavelen);
+    _lambdas = std::vector<Float>(lambdas.begin(), lambdas.end());
+    size_t index = num_wavelen + 1;
+    ParsedParameter *param = new ParsedParameter(FileLoc());
+    param->name = "P";
+    param->type = "point3";
+    while (index < contents.size()) {
+        // Easier to store the phase values as a function of cos(<scattering_angle>)
+        // rather than store via the angle and convert every request to `p'
+        Float angle = cos(Radians(contents[index]));
+        index++;
+        auto sub_values = all_elements.subspan(index, num_wavelen);
+        for (int i = 0; i < num_wavelen; i++) {
+            param->AddFloat(angle);
+            param->AddFloat(_lambdas[i]);
+            param->AddFloat(sub_values[i]);
+        }
+        _phase_values[angle] = PiecewiseLinearSpectrum(lambdas, sub_values);
+        index += num_wavelen;
+    }
+    ParsedParameterVector params;
+    params.push_back(param);
+    param = new ParsedParameter(FileLoc());
+    param->name = "indices";
+    param->type = "integer";
+    for (auto i = 0; i < _phase_values.size() - 1; i++) {
+        int index = i * num_wavelen;
+        for (auto j = 0; j < num_wavelen - 1; j++) {
+            param->AddInt(index);
+            param->AddInt(index + 1);
+            param->AddInt((index + 1) + num_wavelen);
+            param->AddInt(index + num_wavelen);
+            index++;
+        }
+    }
+    params.push_back(param);
+    ParameterDictionary dict(params, RGBColorSpace::sRGB);
+    Transform renderFromObject;
+    FileLoc loc;
+    auto mesh =
+        BilinearPatch::CreateMesh(&renderFromObject, false, dict, &loc, Allocator());
+    auto patches = BilinearPatch::CreatePatches(mesh, Allocator());
+    for (auto patch : patches) {
+        _total_area += patch.Area();
+    }
+}
+
+Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {
+    auto cos_theta = Dot(wo, wi);
+    auto lower_bound = _phase_values.lower_bound(cos_theta);
+    auto upper_bound = _phase_values.upper_bound(cos_theta);
+    // If lower_bound and upper_bound are the same, then cos_theta is not in the map
+    if (lower_bound == upper_bound && lower_bound != _phase_values.begin()) {
+        lower_bound--;  // Move lower_bound below cos_theta
+        auto lower_key = lower_bound->first;
+        auto upper_key = upper_bound->first;
+        float interpolant = (cos_theta - lower_key) / (upper_key - lower_key);
+
+        PiecewiseLinearSpectrum &result = _result->Get();
+        lower_bound->second.interpolate(interpolant, upper_bound->second, result);
+        return &result;
+    } else {
+        return &(lower_bound->second);
+    }
+}
+
+Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
+    auto cos_theta = Dot(wo, wi);
+    auto lower_bound = _phase_values.lower_bound(cos_theta);
+    auto upper_bound = _phase_values.upper_bound(cos_theta);
+    PiecewiseLinearSpectrum result;
+    // If lower_bound and upper_bound are the same, then cos_theta is not in the map
+    if (lower_bound == upper_bound && lower_bound != _phase_values.begin()) {
+        lower_bound--;  // Move lower_bound below cos_theta
+        auto lower_key = lower_bound->first;
+        auto upper_key = upper_bound->first;
+        float interpolant = (cos_theta - lower_key) / (upper_key - lower_key);
+
+        lower_bound->second.interpolate(interpolant, upper_bound->second, result);
+    } else {
+        result = lower_bound->second;
+    }
+
+    return result.arclength() / _total_area;
+}
+
+pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo,
+                                                                     Point2f u) const {
+    Float pdf;
+    Float cosTheta = 1 - 2 * u[0];
+
+    // Compute direction _wi_ for Henyey--Greenstein sample
+    Float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
+    Float phi = 2 * Pi * u[1];
+    Frame wFrame = Frame::FromZ(wo);
+    Vector3f wi = wFrame.FromLocal(SphericalDirection(sinTheta, cosTheta, phi));
+
+    pdf = PDF(wo, wi);
+    return PhaseFunctionSample{pdf, wi, pdf};
+}
+
+std::string TabulatedPhaseFunction::ToString() const {
+    return StringPrintf("[ TabulatedPhaseFunction g: %f ]", g);
 }
 
 struct MeasuredSS {
@@ -195,9 +324,10 @@ HomogeneousMedium *HomogeneousMedium::Create(const ParameterDictionary &paramete
 
     Float sigmaScale = parameters.GetOneFloat("scale", 1.f);
     Float g = parameters.GetOneFloat("g", 0.0f);
+    PhaseFunction phase = alloc.new_object<HGPhaseFunction>(g);
 
-    return alloc.new_object<HomogeneousMedium>(sig_a, sig_s, sigmaScale, Le, LeScale, g,
-                                               alloc);
+    return alloc.new_object<HomogeneousMedium>(sig_a, sig_s, sigmaScale, Le, LeScale,
+                                               phase, alloc);
 }
 
 std::string HomogeneousMedium::ToString() const {
@@ -210,17 +340,17 @@ STAT_MEMORY_COUNTER("Memory/Volume grids", volumeGridBytes);
 
 // GridMedium Method Definitions
 GridMedium::GridMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
-                       Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, Float g,
-                       SampledGrid<Float> d,
+                       Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale,
+                       PhaseFunction phaseF, SampledGrid<Float> d,
                        pstd::optional<SampledGrid<Float>> temperature,
-                       Float temperatureScale, Float temperatureOffset,
-                       Spectrum Le, SampledGrid<Float> LeGrid, Allocator alloc)
+                       Float temperatureScale, Float temperatureOffset, Spectrum Le,
+                       SampledGrid<Float> LeGrid, Allocator alloc)
     : bounds(bounds),
       renderFromMedium(renderFromMedium),
       sigma_a_spec(sigma_a, alloc),
       sigma_s_spec(sigma_s, alloc),
       densityGrid(std::move(d)),
-      phase(g),
+      phase(phaseF),
       temperatureGrid(std::move(temperature)),
       temperatureScale(temperatureScale),
       temperatureOffset(temperatureOffset),
@@ -309,6 +439,8 @@ GridMedium *GridMedium::Create(const ParameterDictionary &parameters,
     Point3f p1 = parameters.GetOnePoint3f("p1", Point3f(1.f, 1.f, 1.f));
 
     Float g = parameters.GetOneFloat("g", 0.);
+    PhaseFunction phase = alloc.new_object<HGPhaseFunction>(g);
+
     Spectrum sigma_a =
         parameters.GetOneSpectrum("sigma_a", nullptr, SpectrumType::Unbounded, alloc);
     if (!sigma_a)
@@ -319,12 +451,12 @@ GridMedium *GridMedium::Create(const ParameterDictionary &parameters,
         sigma_s = alloc.new_object<ConstantSpectrum>(1.f);
     Float sigmaScale = parameters.GetOneFloat("scale", 1.f);
 
-    Float temperatureOffset = parameters.GetOneFloat("temperatureoffset",
-                                                     parameters.GetOneFloat("temperaturecutoff", 0.f));
+    Float temperatureOffset = parameters.GetOneFloat(
+        "temperatureoffset", parameters.GetOneFloat("temperaturecutoff", 0.f));
     Float temperatureScale = parameters.GetOneFloat("temperaturescale", 1.f);
 
     return alloc.new_object<GridMedium>(
-        Bounds3f(p0, p1), renderFromMedium, sigma_a, sigma_s, sigmaScale, g,
+        Bounds3f(p0, p1), renderFromMedium, sigma_a, sigma_s, sigmaScale, phase,
         std::move(densityGrid), std::move(temperatureGrid), temperatureScale,
         temperatureOffset, Le, std::move(LeGrid), alloc);
 }
@@ -337,7 +469,7 @@ std::string GridMedium::ToString() const {
 
 // RGBGridMedium Method Definitions
 RGBGridMedium::RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
-                             Float g,
+                             PhaseFunction phaseF,
                              pstd::optional<SampledGrid<RGBUnboundedSpectrum>> rgbA,
                              pstd::optional<SampledGrid<RGBUnboundedSpectrum>> rgbS,
                              Float sigmaScale,
@@ -345,7 +477,7 @@ RGBGridMedium::RGBGridMedium(const Bounds3f &bounds, const Transform &renderFrom
                              Float LeScale, Allocator alloc)
     : bounds(bounds),
       renderFromMedium(renderFromMedium),
-      phase(g),
+      phase(phaseF),
       sigma_aGrid(std::move(rgbA)),
       sigma_sGrid(std::move(rgbS)),
       sigmaScale(sigmaScale),
@@ -445,9 +577,11 @@ RGBGridMedium *RGBGridMedium::Create(const ParameterDictionary &parameters,
     Point3f p1 = parameters.GetOnePoint3f("p1", Point3f(1.f, 1.f, 1.f));
     Float LeScale = parameters.GetOneFloat("Lescale", 1.f);
     Float g = parameters.GetOneFloat("g", 0.f);
+    PhaseFunction phase = alloc.new_object<HGPhaseFunction>(g);
+
     Float sigmaScale = parameters.GetOneFloat("scale", 1.f);
 
-    return alloc.new_object<RGBGridMedium>(Bounds3f(p0, p1), renderFromMedium, g,
+    return alloc.new_object<RGBGridMedium>(Bounds3f(p0, p1), renderFromMedium, phase,
                                            std::move(sigma_aGrid), std::move(sigma_sGrid),
                                            sigmaScale, std::move(LeGrid), LeScale, alloc);
 }
@@ -464,6 +598,8 @@ CloudMedium *CloudMedium::Create(const ParameterDictionary &parameters,
                                  Allocator alloc) {
     Float density = parameters.GetOneFloat("density", 1);
     Float g = parameters.GetOneFloat("g", 0.);
+    PhaseFunction phase = alloc.new_object<HGPhaseFunction>(g);
+
     Float wispiness = parameters.GetOneFloat("wispiness", 1);
     Float frequency = parameters.GetOneFloat("frequency", 5);
     Spectrum sigma_a =
@@ -479,7 +615,7 @@ CloudMedium *CloudMedium::Create(const ParameterDictionary &parameters,
     Point3f p1 = parameters.GetOnePoint3f("p1", Point3f(1.f, 1.f, 1.f));
 
     return alloc.new_object<CloudMedium>(Bounds3f(p0, p1), renderFromMedium, sigma_a,
-                                         sigma_s, g, density, wispiness, frequency,
+                                         sigma_s, phase, density, wispiness, frequency,
                                          alloc);
 }
 
@@ -509,7 +645,7 @@ static nanovdb::GridHandle<Buffer> readGrid(const std::string &filename,
 }
 
 NanoVDBMedium::NanoVDBMedium(const Transform &renderFromMedium, Spectrum sigma_a,
-                             Spectrum sigma_s, Float sigmaScale, Float g,
+                             Spectrum sigma_s, Float sigmaScale, PhaseFunction phaseF,
                              nanovdb::GridHandle<NanoVDBBuffer> dg,
                              nanovdb::GridHandle<NanoVDBBuffer> tg, Float LeScale,
                              Float temperatureOffset, Float temperatureScale,
@@ -517,7 +653,7 @@ NanoVDBMedium::NanoVDBMedium(const Transform &renderFromMedium, Spectrum sigma_a
     : renderFromMedium(renderFromMedium),
       sigma_a_spec(sigma_a, alloc),
       sigma_s_spec(sigma_s, alloc),
-      phase(g),
+      phase(phaseF),
       majorantGrid(Bounds3f(), {64, 64, 64}, alloc),
       densityGrid(std::move(dg)),
       temperatureGrid(std::move(tg)),
@@ -644,11 +780,19 @@ NanoVDBMedium *NanoVDBMedium::Create(const ParameterDictionary &parameters,
     temperatureGrid = readGrid<NanoVDBBuffer>(filename, temperaturename, loc, alloc);
 
     Float LeScale = parameters.GetOneFloat("Lescale", 1.f);
-    Float temperatureOffset = parameters.GetOneFloat("temperatureoffset",
-                                                     parameters.GetOneFloat("temperaturecutoff", 0.f));
+    Float temperatureOffset = parameters.GetOneFloat(
+        "temperatureoffset", parameters.GetOneFloat("temperaturecutoff", 0.f));
     Float temperatureScale = parameters.GetOneFloat("temperaturescale", 1.f);
 
-    Float g = parameters.GetOneFloat("g", 0.);
+    PhaseFunction phase;
+    std::string phase_file = parameters.GetOneString("tablulated_phase", "");
+    if (phase_file.empty()) {
+        Float g = parameters.GetOneFloat("g", 0.);
+        phase = alloc.new_object<HGPhaseFunction>(g);
+    } else {
+        phase = alloc.new_object<TabulatedPhaseFunction>(phase_file);
+    }
+
     Spectrum sigma_a =
         parameters.GetOneSpectrum("sigma_a", nullptr, SpectrumType::Unbounded, alloc);
     if (!sigma_a)
@@ -660,7 +804,7 @@ NanoVDBMedium *NanoVDBMedium::Create(const ParameterDictionary &parameters,
     Float sigmaScale = parameters.GetOneFloat("scale", 1.f);
 
     return alloc.new_object<NanoVDBMedium>(
-        renderFromMedium, sigma_a, sigma_s, sigmaScale, g, std::move(densityGrid),
+        renderFromMedium, sigma_a, sigma_s, sigmaScale, phase, std::move(densityGrid),
         std::move(temperatureGrid), LeScale, temperatureOffset, temperatureScale, alloc);
 }
 

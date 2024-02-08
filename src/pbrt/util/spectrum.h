@@ -27,6 +27,7 @@
 #include <numeric>
 #include <string>
 #include <vector>
+#include "pbrt/util/vecmath.h"
 
 namespace pbrt {
 
@@ -479,6 +480,25 @@ class PiecewiseLinearSpectrum {
     PBRT_CPU_GPU
     Float operator()(Float lambda) const;
 
+    // Linear interpolate between two Spectra. `val' is expected to be in [0, 1]
+    void interpolate(Float val, PiecewiseLinearSpectrum other, PiecewiseLinearSpectrum& result) const {
+        result.lambdas = lambdas;
+        result.values.clear();
+        for (auto i = 0; i < values.size(); i++) {
+            result.values.push_back((1-val)*values[i] + val*other.values[i]);
+        }
+    }
+
+    Float arclength() const {
+        Point2f lpt(lambdas[0], values[0]);
+        Float length = 0;
+        for (auto i = 1; i < values.size(); i++) {
+            Point2f upt(lambdas[i], values[i]);
+            length += Distance(upt, lpt);
+        }
+        return length;
+    }
+
     std::string ToString() const;
 
     PiecewiseLinearSpectrum(pstd::span<const Float> lambdas,
@@ -489,7 +509,7 @@ class PiecewiseLinearSpectrum {
     static PiecewiseLinearSpectrum *FromInterleaved(pstd::span<const Float> samples,
                                                     bool normalize, Allocator alloc);
 
-  private:
+  protected:
     // PiecewiseLinearSpectrum Private Members
     pstd::vector<Float> lambdas, values;
 };

@@ -26,15 +26,16 @@ struct PhaseFunctionSample {
 
 // PhaseFunction Definition
 class HGPhaseFunction;
+class TabulatedPhaseFunction;
 
-class PhaseFunction : public TaggedPointer<HGPhaseFunction> {
+class PhaseFunction : public TaggedPointer<HGPhaseFunction, TabulatedPhaseFunction> {
   public:
     // PhaseFunction Interface
     using TaggedPointer::TaggedPointer;
 
     std::string ToString() const;
 
-    PBRT_CPU_GPU inline Float p(Vector3f wo, Vector3f wi) const;
+    PBRT_CPU_GPU inline Spectrum p(Vector3f wo, Vector3f wi) const;
 
     PBRT_CPU_GPU inline pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo,
                                                                      Point2f u) const;
