@@ -143,7 +143,7 @@ TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
 }
 
 Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {
-    auto cos_theta = Dot(wo, wi);
+    auto cos_theta = Clamp(Dot(wo, wi), -1.0, 1.0);
     auto lower_bound = _phase_values.lower_bound(cos_theta);
     auto upper_bound = _phase_values.upper_bound(cos_theta);
     // If lower_bound and upper_bound are the same, then cos_theta is not in the map
@@ -162,7 +162,7 @@ Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {
 }
 
 Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
-    auto cos_theta = Dot(wo, wi);
+    auto cos_theta = Clamp(Dot(wo, wi), -1.0, 1.0);
     auto lower_bound = _phase_values.lower_bound(cos_theta);
     auto upper_bound = _phase_values.upper_bound(cos_theta);
     PiecewiseLinearSpectrum result;
