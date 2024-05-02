@@ -104,7 +104,10 @@ TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
     while (index < contents.size()) {
         // Easier to store the phase values as a function of cos(<scattering_angle>)
         // rather than store via the angle and convert every request to `p'
-        Float angle = cos(Radians(contents[index]));
+        // PBRT convention is that both vectors point away from the scattering point, 
+        // which is 180 degrees from the standard literature which assume the incoming vector
+        // is pointed towards the scattering point
+        Float angle = cos(Radians(180.0 - contents[index]));
         index++;
         auto sub_values = all_elements.subspan(index, num_wavelen);
         for (int i = 0; i < num_wavelen; i++) {
@@ -178,13 +181,16 @@ Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
         result = lower_bound->second;
     }
 
-    return result.arclength() / _total_area;
+    return result.arclength();
 }
 
 pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo,
                                                                      Point2f u) const {
     Float pdf;
-    Float cosTheta = 1 - 2 * u[0];
+    //Float cosTheta = 1 - 2 * u[0];
+    Float g = 0.877;
+    Float cosTheta =
+            -1 / (2 * g) * (1 + Sqr(g) - Sqr((1 - Sqr(g)) / (1 + g - 2 * g * u[0])));
 
     // Compute direction _wi_ for Henyey--Greenstein sample
     Float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
