@@ -23,6 +23,7 @@
 #include "pbrt/pbrt.h"
 #include "pbrt/shapes.h"
 #include "pbrt/util/check.h"
+#include "pbrt/util/log.h"
 #include "pbrt/util/math.h"
 #include "pbrt/util/parallel.h"
 #include "pbrt/util/pstd.h"
@@ -184,8 +185,43 @@ Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
     return result.arclength();
 }
 
+#if 1
 pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo,
-                                                                     Point2f u) const {
+                                                                     Point2f u, Float lambda) const {
+    Float pdf, cosTheta;
+    auto lower_lambda = _cdf.lower_bound(lambda);
+    auto upper_lambda = _cdf.upper_bound(lambda);
+    if (lower_lambda == upper_lambda && lower_lambda != _cdf.begin())
+        lower_lambda--;  // Move lower_bound below cos_theta
+    auto lower_key = lower_lambda->first;
+    auto upper_key = upper_lambda->first;
+    float interpolant = (lambda - lower_key) / (upper_key - lower_key);
+    // Compute inverse CDF for lower_bound
+    auto lower_cdf = lower_lambda->second.rev.lower_bound(u[0]);
+    auto upper_cdf = lower_lambda->second.rev.upper_bound(u[0]);
+    if (lower_cdf == upper_cdf && lower_cdf != lower_lambda->second.rev.begin())
+        lower_cdf--;  // Move lower_bound below cos_theta
+    float cdf_interp = (u[0] - lower_cdf->first) / (upper_cdf->first - lower_cdf->first);
+    float lower_theta = (upper_cdf->second - lower_cdf->second) * cdf_interp + lower_cdf->second;
+    lower_cdf = upper_lambda->second.rev.lower_bound(u[0]);
+    upper_cdf = upper_lambda->second.rev.upper_bound(u[0]);
+    if (lower_cdf == upper_cdf && lower_cdf != lower_lambda->second.rev.begin())
+        lower_cdf--;  // Move lower_bound below cos_theta
+    cdf_interp = (u[0] - lower_cdf->first) / (upper_cdf->first - lower_cdf->first);
+    float upper_theta = (upper_cdf->second - lower_cdf->second) * cdf_interp + lower_cdf->second;
+    cosTheta = cos((upper_theta - lower_theta) * interpolant + lower_theta);
+    // Compute direction _wi_ for Henyey--Greenstein sample
+    Float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
+    Float phi = 2 * Pi * u[1];
+    Frame wFrame = Frame::FromZ(wo);
+    Vector3f wi = wFrame.FromLocal(SphericalDirection(sinTheta, cosTheta, phi));
+
+    pdf = PDF(wo, wi);
+    return PhaseFunctionSample{pdf, wi, pdf};
+}
+#else
+pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo,
+                                                                     Point2f u, Float lambda) const {
     Float pdf;
     //Float cosTheta = 1 - 2 * u[0];
     Float g = 0.877;
@@ -201,6 +237,7 @@ pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo
     pdf = PDF(wo, wi);
     return PhaseFunctionSample{pdf, wi, pdf};
 }
+#endif
 
 std::string TabulatedPhaseFunction::ToString() const {
     return StringPrintf("[ TabulatedPhaseFunction g: %f ]", g);

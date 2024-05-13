@@ -1107,9 +1107,11 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                         }
 
                                         // Sample new direction at real-scattering event
+                                        Float v = sampler.Get1D();
+                                        SampledWavelengths l = lambda.SampleUniform(v);
                                         Point2f u = sampler.Get2D();
                                         pstd::optional<PhaseFunctionSample> ps =
-                                            intr.phase.Sample_p(-ray.d, u);
+                                            intr.phase.Sample_p(-ray.d, u, l[0]);
                                         if (!ps || ps->pdf == 0)
                                             terminated = true;
                                         else {
