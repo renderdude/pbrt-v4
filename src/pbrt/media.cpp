@@ -98,51 +98,51 @@ TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
     auto lambdas = all_elements.subspan(1, num_wavelen);
     _lambdas = std::vector<Float>(lambdas.begin(), lambdas.end());
     size_t index = num_wavelen + 1;
-    ParsedParameter *param = new ParsedParameter(FileLoc());
-    param->name = "P";
-    param->type = "point3";
+    std::vector<std::vector<Float>> pdf_scaled(num_wavelen);
+    std::vector<Float> angles;
+
     while (index < contents.size()) {
-        // Easier to store the phase values as a function of cos(<scattering_angle>)
-        // rather than store via the angle and convert every request to `p'
         // PBRT convention is that both vectors point away from the scattering point, 
         // which is 180 degrees from the standard literature which assume the incoming vector
         // is pointed towards the scattering point
-        Float angle = cos(Radians(180.0 - contents[index]));
+        Float angle = Radians(180.0 - contents[index]);
+        angles.push_back(angle);
         index++;
         auto sub_values = all_elements.subspan(index, num_wavelen);
-        for (int i = 0; i < num_wavelen; i++) {
-            param->AddFloat(angle);
-            param->AddFloat(_lambdas[i]);
-            param->AddFloat(sub_values[i]);
-        }
-        _phase_values[angle] = PiecewiseLinearSpectrum(lambdas, sub_values);
+        // Easier to store the phase values as a function of cos(<scattering_angle>)
+        // rather than store via the angle and convert every request to `p'
+        _phase_values[cos(angle)] = PiecewiseLinearSpectrum(lambdas, sub_values);
         index += num_wavelen;
-    }
-    ParsedParameterVector params;
-    params.push_back(param);
-    param = new ParsedParameter(FileLoc());
-    param->name = "indices";
-    param->type = "integer";
-    for (auto i = 0; i < _phase_values.size() - 1; i++) {
-        int index = i * num_wavelen;
-        for (auto j = 0; j < num_wavelen - 1; j++) {
-            param->AddInt(index);
-            param->AddInt(index + 1);
-            param->AddInt((index + 1) + num_wavelen);
-            param->AddInt(index + num_wavelen);
-            index++;
+        for (int i = 0; i < num_wavelen; i++) {
+            pdf_scaled[i].push_back(sub_values[i]*sin(angle)*2*Pi);
         }
     }
-    params.push_back(param);
-    ParameterDictionary dict(params, RGBColorSpace::sRGB);
-    Transform renderFromObject;
-    FileLoc loc;
-    auto mesh =
-        BilinearPatch::CreateMesh(&renderFromObject, false, dict, &loc, Allocator());
-    auto patches = BilinearPatch::CreatePatches(mesh, Allocator());
-    for (auto patch : patches) {
-        _total_area += patch.Area();
+
+    // Reverse the values since they're now decreasing (from the angle assignment)
+    for (int i = 0; i < num_wavelen; i++) {
+        std::reverse(pdf_scaled[i].begin(), pdf_scaled[i].end());
     }
+    std::reverse(angles.begin(), angles.end());
+
+    // Now compute the CDF
+    for (int i = 0; i < angles.size(); i++) {
+        for (int j = 0; j < num_wavelen; j++) {
+            if (i == 0 )
+                _cdf[lambdas[j]].fwd[angles[i]] = 0.f;
+            else {
+                Float trap = (angles[i] - angles[i-1]) * (0.5 * (pdf_scaled[j][i-1] + pdf_scaled[j][i]));
+                _cdf[lambdas[j]].fwd[angles[i]] = _cdf[lambdas[j]].fwd[angles[i-1]] + trap;
+            }
+        }
+    }
+    // Normalize the CDF
+    for (int i = 0; i < angles.size(); i++) {
+        for (int j = 0; j < num_wavelen; j++) {
+            Float div = _cdf[lambdas[j]].fwd[angles.back()];
+             _cdf[lambdas[j]].fwd[angles[i]] /= div;
+             _cdf[lambdas[j]].rev[_cdf[lambdas[j]].fwd[angles[i]]] = angles[i];
+         }
+     }
 }
 
 Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {

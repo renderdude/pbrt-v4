@@ -98,6 +98,11 @@ class TabulatedPhaseFunction {
     std::vector<Float> _lambdas;
     // Indexed by cos(angle)
     std::map<Float, PiecewiseLinearSpectrum> _phase_values;
+    struct CDF_Map{
+        std::map<Float, Float> fwd;
+        std::map<Float, Float> rev;
+    };
+    std::map<Float, CDF_Map> _cdf;
 };
 
 // MediumProperties Definition
