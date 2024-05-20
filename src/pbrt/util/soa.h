@@ -15,6 +15,7 @@
 #include <pbrt/interaction.h>
 #include <pbrt/ray.h>
 #include <pbrt/util/math.h>
+#include <pbrt/util/mediatracker.h>
 #include <pbrt/util/pstd.h>
 #include <pbrt/util/spectrum.h>
 #include <pbrt/util/vecmath.h>
@@ -43,6 +44,59 @@ inline void Store4(Float4 *p, Float4 v) {
     *p = v;
 #endif
 }
+
+template <>
+struct SOA<MediaTracker> {
+    SOA() = default;
+    SOA(int size, Allocator alloc) {
+        nAlloc = size * NSpectrumSamples;
+        ptr1 = alloc.allocate_object<Medium>(nAlloc);
+    }
+    SOA &operator=(const SOA &s) {
+        nAlloc = s.nAlloc;
+        ptr1 = s.ptr1;
+        return *this;
+    }
+    PBRT_CPU_GPU
+    MediaTracker operator[](int i) const {
+        MediaTracker s;
+        int offset = i * NSpectrumSamples;
+        DCHECK_LT(offset, nAlloc);
+        for (int i = 0; i < NSpectrumSamples; ++i)
+            s[i] = ptr1[offset + i];
+        return s;
+    }
+
+    struct GetSetIndirector {
+        PBRT_CPU_GPU
+        operator MediaTracker() const {
+            return soa->Load(index);  // (*(const SOA<MediaTracker> *)soa)[index];
+        }
+        PBRT_CPU_GPU
+        void operator=(const MediaTracker &s) {
+            int offset = index * NSpectrumSamples;
+            DCHECK_LT(offset, soa->nAlloc);
+            for (int i = 0; i < NSpectrumSamples; ++i)
+                soa->ptr1[offset + i] = s[i];
+        }
+
+        SOA<MediaTracker> *soa;
+        int index;
+    };
+
+    PBRT_CPU_GPU
+    GetSetIndirector operator[](int i) { return GetSetIndirector{this, i}; }
+
+    // TODO: get rid of these
+    PBRT_CPU_GPU
+    MediaTracker Load(int i) const { return (*this)[i]; }
+    PBRT_CPU_GPU
+    void Store(int i, const MediaTracker &s) { (*this)[i] = s; }
+
+  private:
+    int nAlloc;
+    Medium *PBRT_RESTRICT ptr1 = nullptr;
+};
 
 template <>
 struct SOA<SampledSpectrum> {

@@ -233,8 +233,8 @@ void WavefrontPathIntegrator::EvaluateMaterialAndBSDF(MaterialEvalQueue *evalQue
                         Ray ray = SpawnRay(w.pi, w.n, w.time, wi);
                         // Initialize _ray_ medium if media are present
                         if (haveMedia)
-                            ray.medium = Dot(ray.d, w.n) > 0 ? w.mediumInterface.outside
-                                                             : w.mediumInterface.inside;
+                            ray.medium.set(Dot(ray.d, w.n) > 0 ? w.mediumInterface.outside
+                                                             : w.mediumInterface.inside);
 
                         bool anyNonSpecularBounces =
                             !bsdfSample->IsSpecular() || w.anyNonSpecularBounces;
@@ -309,8 +309,8 @@ void WavefrontPathIntegrator::EvaluateMaterialAndBSDF(MaterialEvalQueue *evalQue
                 Ray ray = SpawnRayTo(w.pi, w.n, w.time, ls->pLight.pi, ls->pLight.n);
                 // Initialize _ray_ medium if media are present
                 if (haveMedia)
-                    ray.medium = Dot(ray.d, w.n) > 0 ? w.mediumInterface.outside
-                                                     : w.mediumInterface.inside;
+                    ray.medium.set(Dot(ray.d, w.n) > 0 ? w.mediumInterface.outside
+                                                     : w.mediumInterface.inside);
 
                 shadowRayQueue->Push(ShadowRayWorkItem{ray, 1 - ShadowEpsilon, lambda, Ld,
                                                        r_u, r_l, w.pixelIndex});

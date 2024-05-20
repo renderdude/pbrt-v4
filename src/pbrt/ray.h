@@ -8,8 +8,9 @@
 #include <pbrt/pbrt.h>
 
 #include <pbrt/base/medium.h>
-#include <pbrt/util/vecmath.h>
+#include <pbrt/util/mediatracker.h>
 #include <pbrt/util/parallel.h>
+#include <pbrt/util/vecmath.h>
 
 #include <string>
 #include <utility>
@@ -48,14 +49,19 @@ class Ray {
 
     Ray() = default;
     PBRT_CPU_GPU
-    Ray(Point3f o, Vector3f d, Float time = 0.f, Medium medium = nullptr)
+    Ray(Point3f o, Vector3f d, Float time = 0.f, Medium medium_ = nullptr)
+    : o(o), d(d), time(time) {
+        medium.set(medium_);
+    }
+
+    Ray(Point3f o, Vector3f d, MediaTracker medium, Float time = 0.f)
     : o(o), d(d), time(time), medium(medium) {}
 
     // Ray Public Members
     Point3f o;
     Vector3f d;
     Float time = 0;
-    Medium medium = nullptr;
+    MediaTracker medium;
 };
 
 // RayDifferential Definition
@@ -66,6 +72,9 @@ class RayDifferential : public Ray {
     PBRT_CPU_GPU
     RayDifferential(Point3f o, Vector3f d, Float time = 0.f, Medium medium = nullptr)
         : Ray(o, d, time, medium) {}
+
+    RayDifferential(Point3f o, Vector3f d, MediaTracker medium, Float time = 0.f)
+        : Ray(o, d, medium, time) {}
 
     PBRT_CPU_GPU
     explicit RayDifferential(const Ray &ray) : Ray(ray) {}

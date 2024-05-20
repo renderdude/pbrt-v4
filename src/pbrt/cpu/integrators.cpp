@@ -388,7 +388,7 @@ SampledSpectrum Integrator::Tr(const Interaction &p0, const Interaction &p1,
             return SampledSpectrum(0.0f);
 
         // Update transmittance for current ray segment
-        if (ray.medium) {
+        if (ray.medium.valid()) {
             Point3f pExit = ray(si ? si->tHit : (1 - ShadowEpsilon));
             ray.d = pExit - ray.o;
 
@@ -904,7 +904,7 @@ SampledSpectrum SimpleVolPathIntegrator::Li(RayDifferential ray,
         // Estimate radiance for ray path using delta tracking
         pstd::optional<ShapeIntersection> si = Intersect(ray);
         bool scattered = false, terminated = false;
-        if (ray.medium) {
+        if (ray.medium.valid()) {
             // Initialize _RNG_ for sampling the majorant transmittance
             uint64_t hash0 = Hash(sampler.Get1D());
             uint64_t hash1 = Hash(sampler.Get1D());
@@ -1025,7 +1025,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                       depth, L, beta)
                              .c_str());
         pstd::optional<ShapeIntersection> si = Intersect(ray);
-        if (ray.medium) {
+        if (ray.medium.valid()) {
             // Sample the participating medium
             bool scattered = false, terminated = false;
             Float tMax = si ? si->tHit : Infinity;
@@ -1091,7 +1091,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                         // Sample direct lighting at volume-scattering
                                         // event
                                         MediumInteraction intr(p, -ray.d, ray.time,
-                                                               ray.medium, mp.phase);
+                                                               ray.medium.get(), mp.phase);
                                         if (export_ray_tree)
                                         {
                                             ray_tree.segments->back().end_pt = p;
@@ -1511,7 +1511,7 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
         }
 
         // Update transmittance for current ray segment
-        if (lightRay.medium) {
+        if (lightRay.medium.valid()) {
             Float tMax = si ? si->tHit : (1 - ShadowEpsilon);
             Float u = rng.Uniform<Float>();
             SampledSpectrum T_maj =
@@ -1726,7 +1726,7 @@ struct EndpointInteraction : Interaction {
     EndpointInteraction(const Interaction &it, Camera camera)
         : Interaction(it), camera(camera) {}
     EndpointInteraction(Camera camera, const Ray &ray)
-        : Interaction(ray.o, ray.time, ray.medium), camera(camera) {}
+        : Interaction(ray.o, ray.time, ray.medium.get()), camera(camera) {}
     EndpointInteraction(const EndpointInteraction &ei)
         : Interaction(ei), camera(ei.camera) {
         static_assert(sizeof(Light) == sizeof(Camera),
@@ -1736,9 +1736,9 @@ struct EndpointInteraction : Interaction {
     EndpointInteraction(Light light, const Interaction &intr)
         : Interaction(intr), light(light) {}
     EndpointInteraction(Light light, const Ray &r)
-        : Interaction(r.o, r.time, r.medium), light(light) {}
+        : Interaction(r.o, r.time, r.medium.get()), light(light) {}
     EndpointInteraction(const Ray &ray)
-        : Interaction(ray(1), Normal3f(-ray.d), ray.time, ray.medium), light(nullptr) {}
+        : Interaction(ray(1), Normal3f(-ray.d), ray.time, ray.medium.get()), light(nullptr) {}
 };
 
 // BDPT Vertex Definition
@@ -2176,7 +2176,7 @@ int RandomWalk(const Integrator &integrator, SampledWavelengths &lambda,
         // Trace a ray and sample the medium, if any
         Vertex &vertex = path[bounces], &prev = path[bounces - 1];
         pstd::optional<ShapeIntersection> si = integrator.Intersect(ray);
-        if (ray.medium) {
+        if (ray.medium.valid()) {
             // Sample participating medium for _RandomWalk()_ ray
             Float tMax = si ? si->tHit : Infinity;
             RNG rng(Hash(ray.o, tMax), Hash(ray.d));
@@ -2202,7 +2202,7 @@ int RandomWalk(const Integrator &integrator, SampledWavelengths &lambda,
                         // Handle scattering for _RandomWalk()_ ray
                         beta *= T_maj * mp.sigma_s / (T_maj[0] * mp.sigma_s[0]);
                         // Record medium interaction in _path_ and compute forward density
-                        MediumInteraction intr(p, -ray.d, ray.time, ray.medium, mp.phase);
+                        MediumInteraction intr(p, -ray.d, ray.time, ray.medium.get(), mp.phase);
                         vertex = Vertex::CreateMedium(intr, beta, pdfFwd, prev);
                         if (++bounces >= maxDepth) {
                             terminated = true;

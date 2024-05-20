@@ -669,6 +669,7 @@ SET (PBRT_UTIL_SOURCE_HEADERS
   src/pbrt/util/loopsubdiv.h
   src/pbrt/util/lowdiscrepancy.h
   src/pbrt/util/math.h
+  src/pbrt/util/mediatracker.h
   src/pbrt/util/memory.h
   src/pbrt/util/mesh.h
   src/pbrt/util/mipmap.h

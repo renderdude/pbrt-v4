@@ -344,13 +344,13 @@ inline Ray Transform::operator()(const Ray &r, Float *tMax) const {
             *tMax -= dt;
     }
 
-    return Ray(Point3f(o), d, r.time, r.medium);
+    return Ray(Point3f(o), d, r.medium, r.time);
 }
 
 inline RayDifferential Transform::operator()(const RayDifferential &r,
                                              Float *tMax) const {
     Ray tr = (*this)(Ray(r), tMax);
-    RayDifferential ret(tr.o, tr.d, tr.time, tr.medium);
+    RayDifferential ret(tr.o, tr.d, tr.medium, tr.time);
     ret.hasDifferentials = r.hasDifferentials;
     ret.rxOrigin = (*this)(r.rxOrigin);
     ret.ryOrigin = (*this)(r.ryOrigin);
@@ -425,13 +425,13 @@ inline Ray Transform::ApplyInverse(const Ray &r, Float *tMax) const {
         if (tMax)
             *tMax -= dt;
     }
-    return Ray(Point3f(o), d, r.time, r.medium);
+    return Ray(Point3f(o), d, r.medium, r.time);
 }
 
 inline RayDifferential Transform::ApplyInverse(const RayDifferential &r,
                                                Float *tMax) const {
     Ray tr = ApplyInverse(Ray(r), tMax);
-    RayDifferential ret(tr.o, tr.d, tr.time, tr.medium);
+    RayDifferential ret(tr.o, tr.d, tr.medium, tr.time);
     ret.hasDifferentials = r.hasDifferentials;
     ret.rxOrigin = ApplyInverse(r.rxOrigin);
     ret.ryOrigin = ApplyInverse(r.ryOrigin);

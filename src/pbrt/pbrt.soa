@@ -10,6 +10,7 @@ flat BxDF;
 flat Medium;
 flat LayeredBxDFConfig;
 
+soa MediaTracker;
 soa SampledSpectrum;
 soa SampledWavelengths;
 
@@ -28,7 +29,7 @@ soa Ray {
     Point3f o;
     Vector3f d;
     Float time;
-    Medium medium;
+    MediaTracker medium;
 };
 
 soa SubsurfaceInteraction {

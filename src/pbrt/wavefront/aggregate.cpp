@@ -52,7 +52,7 @@ void CPUAggregate::IntersectClosest(int maxRays, const RayQueue *rayQueue,
         else
             // FIXME? Second arg r.ray.medium doesn't match OptiX path
             EnqueueWorkAfterIntersection(
-                r, r.ray.medium, si->tHit, si->intr, mediumSampleQueue, nextRayQueue,
+                r, r.ray.medium.get(), si->tHit, si->intr, mediumSampleQueue, nextRayQueue,
                 hitAreaLightQueue, basicEvalMaterialQueue, universalEvalMaterialQueue);
     });
 }

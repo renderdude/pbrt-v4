@@ -764,7 +764,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
         using M = typename std::remove_reference_t<decltype(*medium)>;
         return SampleT_maj<M>(ray, tMax, u, rng, lambda, callback);
     };
-    return ray.medium.Dispatch(sample);
+    return ray.medium.get().Dispatch(sample);
 }
 
 template <typename ConcreteMedium, typename F>
@@ -775,7 +775,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     ray.d = Normalize(ray.d);
 
     // Initialize _MajorantIterator_ for ray majorant sampling
-    ConcreteMedium *medium = ray.medium.Cast<ConcreteMedium>();
+    ConcreteMedium *medium = ray.medium.get().Cast<ConcreteMedium>();
     typename ConcreteMedium::MajorantIterator iter = medium->SampleRay(ray, tMax, lambda);
 
     // Generate ray majorant samples until termination

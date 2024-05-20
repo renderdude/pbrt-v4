@@ -937,7 +937,7 @@ pstd::optional<CameraRay> RealisticCamera::GenerateRay(CameraSample sample,
 
     // Finish initialization of _RealisticCamera_ ray
     ray.time = SampleTime(sample.time);
-    ray.medium = medium;
+    ray.medium.set(medium);
     ray = RenderFromCamera(ray);
     ray.d = Normalize(ray.d);
 

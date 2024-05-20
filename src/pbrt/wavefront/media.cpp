@@ -111,7 +111,7 @@ void WavefrontPathIntegrator::SampleMediumInteraction(int wavefrontDepth) {
                                 std::remove_reference_t<decltype(*ptr)>>;
                             mediumScatterQueue->Push(MediumScatterWorkItem<PhaseFunction>{
                                 p, w.depth, lambda, beta, r_u, ptr, -ray.d, ray.time,
-                                w.etaScale, ray.medium, w.pixelIndex});
+                                w.etaScale, ray.medium.get(), w.pixelIndex});
                         };
                         DCHECK_RARE(1e-6f, !beta);
                         if (beta && r_u)

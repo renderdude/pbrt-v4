@@ -102,14 +102,14 @@ class Interaction {
     PBRT_CPU_GPU
     Ray SpawnRayTo(Point3f p2) const {
         Ray r = pbrt::SpawnRayTo(pi, n, time, p2);
-        r.medium = GetMedium(r.d);
+        r.medium.set(GetMedium(r.d));
         return r;
     }
 
     PBRT_CPU_GPU
     Ray SpawnRayTo(const Interaction &it) const {
         Ray r = pbrt::SpawnRayTo(pi, n, time, it.pi, it.n);
-        r.medium = GetMedium(r.d);
+        r.medium.set(GetMedium(r.d));
         return r;
     }
 

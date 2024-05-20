@@ -115,9 +115,9 @@ void WavefrontPathIntegrator::SampleSubsurface(int wavefrontDepth) {
                         Ray ray = SpawnRay(intr.pi, intr.n, time, wi);
                         if (haveMedia)
                             // TODO: should always just take outside in this case?
-                            ray.medium = Dot(ray.d, intr.n) > 0
+                            ray.medium.set(Dot(ray.d, intr.n) > 0
                                              ? w.mediumInterface.outside
-                                             : w.mediumInterface.inside;
+                                             : w.mediumInterface.inside);
 
                         // || rather than | is intentional, to avoid the read if
                         // possible...
@@ -194,8 +194,8 @@ void WavefrontPathIntegrator::SampleSubsurface(int wavefrontDepth) {
                 Ray ray = SpawnRayTo(intr.pi, intr.n, time, ls->pLight.pi, ls->pLight.n);
                 if (haveMedia)
                     // TODO: as above, always take outside here?
-                    ray.medium = Dot(ray.d, intr.n) > 0 ? w.mediumInterface.outside
-                                                        : w.mediumInterface.inside;
+                    ray.medium.set(Dot(ray.d, intr.n) > 0 ? w.mediumInterface.outside
+                                                        : w.mediumInterface.inside);
 
                 shadowRayQueue->Push(ShadowRayWorkItem{ray, 1 - ShadowEpsilon, lambda, Ld,
                                                        r_u, r_l, w.pixelIndex});

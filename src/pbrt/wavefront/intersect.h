@@ -16,7 +16,7 @@ namespace pbrt {
 inline PBRT_CPU_GPU void EnqueueWorkAfterMiss(RayWorkItem r,
                                               MediumSampleQueue *mediumSampleQueue,
                                               EscapedRayQueue *escapedRayQueue) {
-    if (r.ray.medium) {
+    if (r.ray.medium.valid()) {
         PBRT_DBG("Adding miss ray to mediumSampleQueue. "
                  "ray %f %f %f d %f %f %f beta %f %f %f %f\n",
                  r.ray.o.x, r.ray.o.y, r.ray.o.z, r.ray.d.x, r.ray.d.y, r.ray.d.z,
@@ -191,7 +191,7 @@ inline PBRT_CPU_GPU void TraceTransmittance(ShadowRayWorkItem sr,
             break;
         }
 
-        if (ray.medium) {
+        if (ray.medium.valid()) {
             PBRT_DBG("Ray medium %p. Will sample tmaj...\n", ray.medium.ptr());
 
             Float tEnd = !result.hit
