@@ -52,7 +52,7 @@ class HGPhaseFunction {
     Spectrum p(Vector3f wo, Vector3f wi) const { return new ConstantSpectrum(HenyeyGreenstein(Dot(wo, wi), g)); }
 
     PBRT_CPU_GPU
-    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const {
+    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u, Float lambda = -1) const {
         Float pdf;
         Vector3f wi = SampleHenyeyGreenstein(wo, g, u, &pdf);
         return PhaseFunctionSample{pdf, wi, pdf};
@@ -82,7 +82,7 @@ class TabulatedPhaseFunction {
     Spectrum p(Vector3f wo, Vector3f wi) const;
 
     PBRT_CPU_GPU
-    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u) const;
+    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u, Float lambda) const;
     
     PBRT_CPU_GPU
     Float PDF(Vector3f wo, Vector3f wi) const;
@@ -98,6 +98,11 @@ class TabulatedPhaseFunction {
     std::vector<Float> _lambdas;
     // Indexed by cos(angle)
     std::map<Float, PiecewiseLinearSpectrum> _phase_values;
+    struct CDF_Map{
+        std::map<Float, Float> fwd;
+        std::map<Float, Float> rev;
+    };
+    std::map<Float, CDF_Map> _cdf;
 };
 
 // MediumProperties Definition
@@ -715,8 +720,8 @@ inline Spectrum PhaseFunction::p(Vector3f wo, Vector3f wi) const {
 }
 
 inline pstd::optional<PhaseFunctionSample> PhaseFunction::Sample_p(Vector3f wo,
-                                                                   Point2f u) const {
-    auto sample = [&](auto ptr) { return ptr->Sample_p(wo, u); };
+                                                                   Point2f u, Float lambda) const {
+    auto sample = [&](auto ptr) { return ptr->Sample_p(wo, u, lambda); };
     return Dispatch(sample);
 }
 

@@ -38,7 +38,7 @@ class PhaseFunction : public TaggedPointer<HGPhaseFunction, TabulatedPhaseFuncti
     PBRT_CPU_GPU inline Spectrum p(Vector3f wo, Vector3f wi) const;
 
     PBRT_CPU_GPU inline pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo,
-                                                                     Point2f u) const;
+                                                                     Point2f u, Float lambda = -1) const;
 
     PBRT_CPU_GPU inline Float PDF(Vector3f wo, Vector3f wi) const;
 };

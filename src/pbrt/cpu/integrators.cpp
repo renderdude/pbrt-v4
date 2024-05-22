@@ -1033,13 +1033,16 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                             L += SampleLd(intr, nullptr, lambda, sampler, beta, r_u);
 
                             // Sample new direction at real-scattering event
+                            Float v = sampler.Get1D();
+                            SampledWavelengths l = lambda.SampleUniform(v);
                             Point2f u = sampler.Get2D();
                             pstd::optional<PhaseFunctionSample> ps =
-                                intr.phase.Sample_p(-ray.d, u);
+                                intr.phase.Sample_p(-ray.d, u, l[0]);
                             if (!ps || ps->pdf == 0)
                                 terminated = true;
                             else {
-                                // Update ray path state for indirect volume scattering
+                                // Update ray path state for indirect volume
+                                // scattering
                                 beta *= ps->p / ps->pdf;
                                 r_l = r_u / ps->pdf;
                                 prevIntrContext = LightSampleContext(intr);
@@ -1051,7 +1054,6 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                             }
                         }
                         return false;
-
                     } else {
                         // Handle null scattering along ray path
                         SampledSpectrum sigma_n =

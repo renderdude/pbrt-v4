@@ -23,6 +23,7 @@
 #include "pbrt/pbrt.h"
 #include "pbrt/shapes.h"
 #include "pbrt/util/check.h"
+#include "pbrt/util/log.h"
 #include "pbrt/util/math.h"
 #include "pbrt/util/parallel.h"
 #include "pbrt/util/pstd.h"
@@ -98,52 +99,55 @@ TabulatedPhaseFunction::TabulatedPhaseFunction(std::string filename) {
     auto lambdas = all_elements.subspan(1, num_wavelen);
     _lambdas = std::vector<Float>(lambdas.begin(), lambdas.end());
     size_t index = num_wavelen + 1;
-    ParsedParameter *param = new ParsedParameter(FileLoc());
-    param->name = "P";
-    param->type = "point3";
+    std::vector<std::vector<Float>> pdf_scaled(num_wavelen);
+    std::vector<Float> angles;
+
     while (index < contents.size()) {
-        // Easier to store the phase values as a function of cos(<scattering_angle>)
-        // rather than store via the angle and convert every request to `p'
-        Float angle = cos(Radians(contents[index]));
+        // PBRT convention is that both vectors point away from the scattering point, 
+        // which is 180 degrees from the standard literature which assume the incoming vector
+        // is pointed towards the scattering point
+        Float angle = Radians(180.0 - contents[index]);
+        angles.push_back(angle);
         index++;
         auto sub_values = all_elements.subspan(index, num_wavelen);
-        for (int i = 0; i < num_wavelen; i++) {
-            param->AddFloat(angle);
-            param->AddFloat(_lambdas[i]);
-            param->AddFloat(sub_values[i]);
-        }
-        _phase_values[angle] = PiecewiseLinearSpectrum(lambdas, sub_values);
+        // Easier to store the phase values as a function of cos(<scattering_angle>)
+        // rather than store via the angle and convert every request to `p'
+        _phase_values[cos(angle)] = PiecewiseLinearSpectrum(lambdas, sub_values);
         index += num_wavelen;
-    }
-    ParsedParameterVector params;
-    params.push_back(param);
-    param = new ParsedParameter(FileLoc());
-    param->name = "indices";
-    param->type = "integer";
-    for (auto i = 0; i < _phase_values.size() - 1; i++) {
-        int index = i * num_wavelen;
-        for (auto j = 0; j < num_wavelen - 1; j++) {
-            param->AddInt(index);
-            param->AddInt(index + 1);
-            param->AddInt((index + 1) + num_wavelen);
-            param->AddInt(index + num_wavelen);
-            index++;
+        for (int i = 0; i < num_wavelen; i++) {
+            pdf_scaled[i].push_back(sub_values[i]*sin(angle)*2*Pi);
         }
     }
-    params.push_back(param);
-    ParameterDictionary dict(params, RGBColorSpace::sRGB);
-    Transform renderFromObject;
-    FileLoc loc;
-    auto mesh =
-        BilinearPatch::CreateMesh(&renderFromObject, false, dict, &loc, Allocator());
-    auto patches = BilinearPatch::CreatePatches(mesh, Allocator());
-    for (auto patch : patches) {
-        _total_area += patch.Area();
+
+    // Reverse the values since they're now decreasing (from the angle assignment)
+    for (int i = 0; i < num_wavelen; i++) {
+        std::reverse(pdf_scaled[i].begin(), pdf_scaled[i].end());
     }
+    std::reverse(angles.begin(), angles.end());
+
+    // Now compute the CDF
+    for (int i = 0; i < angles.size(); i++) {
+        for (int j = 0; j < num_wavelen; j++) {
+            if (i == 0 )
+                _cdf[lambdas[j]].fwd[angles[i]] = 0.f;
+            else {
+                Float trap = (angles[i] - angles[i-1]) * (0.5 * (pdf_scaled[j][i-1] + pdf_scaled[j][i]));
+                _cdf[lambdas[j]].fwd[angles[i]] = _cdf[lambdas[j]].fwd[angles[i-1]] + trap;
+            }
+        }
+    }
+    // Normalize the CDF
+    for (int i = 0; i < angles.size(); i++) {
+        for (int j = 0; j < num_wavelen; j++) {
+            Float div = _cdf[lambdas[j]].fwd[angles.back()];
+             _cdf[lambdas[j]].fwd[angles[i]] /= div;
+             _cdf[lambdas[j]].rev[_cdf[lambdas[j]].fwd[angles[i]]] = angles[i];
+         }
+     }
 }
 
 Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {
-    auto cos_theta = Dot(wo, wi);
+    auto cos_theta = Clamp(Dot(wo, wi), -1.0, 1.0);
     auto lower_bound = _phase_values.lower_bound(cos_theta);
     auto upper_bound = _phase_values.upper_bound(cos_theta);
     // If lower_bound and upper_bound are the same, then cos_theta is not in the map
@@ -162,7 +166,7 @@ Spectrum TabulatedPhaseFunction::p(Vector3f wo, Vector3f wi) const {
 }
 
 Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
-    auto cos_theta = Dot(wo, wi);
+    auto cos_theta = Clamp(Dot(wo, wi), -1.0, 1.0);
     auto lower_bound = _phase_values.lower_bound(cos_theta);
     auto upper_bound = _phase_values.upper_bound(cos_theta);
     PiecewiseLinearSpectrum result;
@@ -178,13 +182,51 @@ Float TabulatedPhaseFunction::PDF(Vector3f wo, Vector3f wi) const {
         result = lower_bound->second;
     }
 
-    return result.arclength() / _total_area;
+    return result.arclength();
 }
 
+#if 1
 pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo,
-                                                                     Point2f u) const {
+                                                                     Point2f u, Float lambda) const {
+    Float pdf, cosTheta;
+    auto lower_lambda = _cdf.lower_bound(lambda);
+    auto upper_lambda = _cdf.upper_bound(lambda);
+    if (lower_lambda == upper_lambda && lower_lambda != _cdf.begin())
+        lower_lambda--;  // Move lower_bound below cos_theta
+    auto lower_key = lower_lambda->first;
+    auto upper_key = upper_lambda->first;
+    float interpolant = (lambda - lower_key) / (upper_key - lower_key);
+    // Compute inverse CDF for lower_bound
+    auto lower_cdf = lower_lambda->second.rev.lower_bound(u[0]);
+    auto upper_cdf = lower_lambda->second.rev.upper_bound(u[0]);
+    if (lower_cdf == upper_cdf && lower_cdf != lower_lambda->second.rev.begin())
+        lower_cdf--;  // Move lower_bound below cos_theta
+    float cdf_interp = (u[0] - lower_cdf->first) / (upper_cdf->first - lower_cdf->first);
+    float lower_theta = (upper_cdf->second - lower_cdf->second) * cdf_interp + lower_cdf->second;
+    lower_cdf = upper_lambda->second.rev.lower_bound(u[0]);
+    upper_cdf = upper_lambda->second.rev.upper_bound(u[0]);
+    if (lower_cdf == upper_cdf && lower_cdf != lower_lambda->second.rev.begin())
+        lower_cdf--;  // Move lower_bound below cos_theta
+    cdf_interp = (u[0] - lower_cdf->first) / (upper_cdf->first - lower_cdf->first);
+    float upper_theta = (upper_cdf->second - lower_cdf->second) * cdf_interp + lower_cdf->second;
+    cosTheta = cos((upper_theta - lower_theta) * interpolant + lower_theta);
+    // Compute direction _wi_ for Henyey--Greenstein sample
+    Float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
+    Float phi = 2 * Pi * u[1];
+    Frame wFrame = Frame::FromZ(wo);
+    Vector3f wi = wFrame.FromLocal(SphericalDirection(sinTheta, cosTheta, phi));
+
+    pdf = PDF(wo, wi);
+    return PhaseFunctionSample{pdf, wi, pdf};
+}
+#else
+pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo,
+                                                                     Point2f u, Float lambda) const {
     Float pdf;
-    Float cosTheta = 1 - 2 * u[0];
+    //Float cosTheta = 1 - 2 * u[0];
+    Float g = 0.877;
+    Float cosTheta =
+            -1 / (2 * g) * (1 + Sqr(g) - Sqr((1 - Sqr(g)) / (1 + g - 2 * g * u[0])));
 
     // Compute direction _wi_ for Henyey--Greenstein sample
     Float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
@@ -195,6 +237,7 @@ pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo
     pdf = PDF(wo, wi);
     return PhaseFunctionSample{pdf, wi, pdf};
 }
+#endif
 
 std::string TabulatedPhaseFunction::ToString() const {
     return StringPrintf("[ TabulatedPhaseFunction g: %f ]", g);

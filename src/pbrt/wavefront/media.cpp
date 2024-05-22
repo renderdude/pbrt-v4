@@ -316,7 +316,7 @@ void WavefrontPathIntegrator::SampleMediumScattering(int wavefrontDepth) {
 
             // Sample indirect lighting.
             pstd::optional<PhaseFunctionSample> phaseSample =
-                w.phase->Sample_p(wo, raySamples.indirect.u);
+                w.phase->Sample_p(wo, raySamples.indirect.u, -1);
             if (!phaseSample || phaseSample->pdf == 0)
                 return;
 
