@@ -130,7 +130,7 @@ struct CameraBaseParameters {
     CameraTransform cameraTransform;
     Float shutterOpen = 0, shutterClose = 1;
     Film film;
-    Medium medium;
+    MediaTracker medium;
     CameraBaseParameters() = default;
     CameraBaseParameters(const CameraTransform &cameraTransform, Film film, Medium medium,
                          const ParameterDictionary &parameters, const FileLoc *loc);
@@ -187,7 +187,7 @@ class CameraBase {
     CameraTransform cameraTransform;
     Float shutterOpen, shutterClose;
     Film film;
-    Medium medium;
+    MediaTracker medium;
     Vector3f minPosDifferentialX, minPosDifferentialY;
     Vector3f minDirDifferentialX, minDirDifferentialY;
 

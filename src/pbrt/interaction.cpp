@@ -24,7 +24,7 @@ std::string Interaction::ToString() const {
     return StringPrintf(
         "[ Interaction pi: %s n: %s uv: %s wo: %s time: %s "
         "medium: %s mediumInterface: %s ]",
-        pi, n, uv, wo, time, medium ? medium.ToString().c_str() : "(nullptr)",
+        pi, n, uv, wo, time, medium[0] ? medium[0].ToString().c_str() : "(nullptr)",
         mediumInterface ? mediumInterface->ToString().c_str() : "(nullptr)");
 }
 
@@ -32,7 +32,7 @@ std::string MediumInteraction::ToString() const {
     return StringPrintf(
         "[ MediumInteraction pi: %s n: %s uv: %s wo: %s time: %s "
         "medium: %s mediumInterface: %s phase: %s ]",
-        pi, n, uv, wo, time, medium ? medium.ToString().c_str() : "(nullptr)",
+        pi, n, uv, wo, time, medium[0] ? medium[0].ToString().c_str() : "(nullptr)",
         mediumInterface ? mediumInterface->ToString().c_str() : "(nullptr)",
         phase ? phase.ToString().c_str() : "(nullptr)");
 }
@@ -223,7 +223,7 @@ std::string SurfaceInteraction::ToString() const {
         "shading.dndu: %s shading.dndv: %s material: %s "
         "areaLight: %s dpdx: %s dpdy: %s dudx: %f dvdx: %f "
         "dudy: %f dvdy: %f faceIndex: %d ]",
-        pi, n, uv, wo, time, medium ? medium.ToString().c_str() : "(nullptr)",
+        pi, n, uv, wo, time, medium[0] ? medium[0].ToString().c_str() : "(nullptr)",
         mediumInterface ? mediumInterface->ToString().c_str() : "(nullptr)", dpdu, dpdv,
         dndu, dndv, shading.n, shading.dpdu, shading.dpdv, shading.dndu, shading.dndv,
         material ? material.ToString().c_str() : "(nullptr)",

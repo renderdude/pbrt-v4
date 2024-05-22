@@ -14,6 +14,7 @@
 #include <pbrt/base/medium.h>
 #include <pbrt/base/sampler.h>
 #include <pbrt/ray.h>
+#include "pbrt/util/mediatracker.h"
 #include <pbrt/util/spectrum.h>
 #include <pbrt/util/taggedptr.h>
 #include <pbrt/util/vecmath.h>
@@ -54,10 +55,10 @@ class Interaction {
 
     // used by medium ctor
     PBRT_CPU_GPU
-    Interaction(Point3f p, Vector3f wo, Float time, Medium medium)
+    Interaction(Point3f p, Vector3f wo, Float time, MediaTracker medium)
         : pi(p), time(time), wo(wo), medium(medium) {}
     PBRT_CPU_GPU
-    Interaction(Point3f p, Normal3f n, Float time, Medium medium)
+    Interaction(Point3f p, Normal3f n, Float time, MediaTracker medium)
         : pi(p), n(n), time(time), medium(medium) {}
     PBRT_CPU_GPU
     Interaction(Point3f p, Point2f uv) : pi(p), uv(uv) {}
@@ -67,7 +68,7 @@ class Interaction {
     PBRT_CPU_GPU
     Interaction(const Point3fi &pi, Normal3f n, Point2f uv) : pi(pi), n(n), uv(uv) {}
     PBRT_CPU_GPU
-    Interaction(Point3f p, Float time, Medium medium)
+    Interaction(Point3f p, Float time, MediaTracker medium)
         : pi(p), time(time), medium(medium) {}
     PBRT_CPU_GPU
     Interaction(Point3f p, const MediumInterface *mediumInterface)
@@ -117,14 +118,14 @@ class Interaction {
     Medium GetMedium(Vector3f w) const {
         if (mediumInterface)
             return Dot(w, n) > 0 ? mediumInterface->outside : mediumInterface->inside;
-        return medium;
+        return medium[0];
     }
 
     PBRT_CPU_GPU
     Medium GetMedium() const {
         if (mediumInterface)
             DCHECK_EQ(mediumInterface->inside, mediumInterface->outside);
-        return mediumInterface ? mediumInterface->inside : medium;
+        return mediumInterface ? mediumInterface->inside : medium[0];
     }
 
     // Interaction Public Members
@@ -134,7 +135,7 @@ class Interaction {
     Normal3f n;
     Point2f uv;
     const MediumInterface *mediumInterface = nullptr;
-    Medium medium = nullptr;
+    MediaTracker medium;
 };
 
 // MediumInteraction Definition
@@ -144,7 +145,7 @@ class MediumInteraction : public Interaction {
     PBRT_CPU_GPU
     MediumInteraction() : phase(nullptr) {}
     PBRT_CPU_GPU
-    MediumInteraction(Point3f p, Vector3f wo, Float time, Medium medium,
+    MediumInteraction(Point3f p, Vector3f wo, Float time, MediaTracker medium,
                       PhaseFunction phase)
         : Interaction(p, wo, time, medium), phase(phase) {}
 
@@ -217,7 +218,7 @@ class SurfaceInteraction : public Interaction {
 
     void SetIntersectionProperties(Material mtl, Light area,
                                    const MediumInterface *primMediumInterface,
-                                   Medium rayMedium) {
+                                   MediaTracker rayMedium) {
         material = mtl;
         areaLight = area;
         CHECK_GE(Dot(n, shading.n), 0.);

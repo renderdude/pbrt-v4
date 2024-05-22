@@ -1091,7 +1091,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                         // Sample direct lighting at volume-scattering
                                         // event
                                         MediumInteraction intr(p, -ray.d, ray.time,
-                                                               ray.medium.get(), mp.phase);
+                                                               ray.medium, mp.phase);
                                         if (export_ray_tree)
                                         {
                                             ray_tree.segments->back().end_pt = p;
@@ -1341,7 +1341,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
             uint64_t seed = MixBits(FloatToBits(sampler.Get1D()));
             WeightedReservoirSampler<SubsurfaceInteraction> interactionSampler(seed);
             // Intersect BSSRDF sampling ray against the scene geometry
-            Interaction base(probeSeg->p0, ray.time, Medium());
+            Interaction base(probeSeg->p0, ray.time, MediaTracker());
             while (true) {
                 Ray r = base.SpawnRayTo(probeSeg->p1);
                 if (r.d == Vector3f(0, 0, 0))
@@ -1726,7 +1726,7 @@ struct EndpointInteraction : Interaction {
     EndpointInteraction(const Interaction &it, Camera camera)
         : Interaction(it), camera(camera) {}
     EndpointInteraction(Camera camera, const Ray &ray)
-        : Interaction(ray.o, ray.time, ray.medium.get()), camera(camera) {}
+        : Interaction(ray.o, ray.time, ray.medium), camera(camera) {}
     EndpointInteraction(const EndpointInteraction &ei)
         : Interaction(ei), camera(ei.camera) {
         static_assert(sizeof(Light) == sizeof(Camera),
@@ -1736,9 +1736,9 @@ struct EndpointInteraction : Interaction {
     EndpointInteraction(Light light, const Interaction &intr)
         : Interaction(intr), light(light) {}
     EndpointInteraction(Light light, const Ray &r)
-        : Interaction(r.o, r.time, r.medium.get()), light(light) {}
+        : Interaction(r.o, r.time, r.medium), light(light) {}
     EndpointInteraction(const Ray &ray)
-        : Interaction(ray(1), Normal3f(-ray.d), ray.time, ray.medium.get()), light(nullptr) {}
+        : Interaction(ray(1), Normal3f(-ray.d), ray.time, ray.medium), light(nullptr) {}
 };
 
 // BDPT Vertex Definition
@@ -2202,7 +2202,7 @@ int RandomWalk(const Integrator &integrator, SampledWavelengths &lambda,
                         // Handle scattering for _RandomWalk()_ ray
                         beta *= T_maj * mp.sigma_s / (T_maj[0] * mp.sigma_s[0]);
                         // Record medium interaction in _path_ and compute forward density
-                        MediumInteraction intr(p, -ray.d, ray.time, ray.medium.get(), mp.phase);
+                        MediumInteraction intr(p, -ray.d, ray.time, ray.medium, mp.phase);
                         vertex = Vertex::CreateMedium(intr, beta, pdfFwd, prev);
                         if (++bounces >= maxDepth) {
                             terminated = true;

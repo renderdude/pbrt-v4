@@ -94,7 +94,7 @@ void CPUAggregate::IntersectOneRandom(
         uint64_t seed = Hash(w.p0, w.p1);
 
         WeightedReservoirSampler<SubsurfaceInteraction> wrs(seed);
-        Interaction base(w.p0, 0.f /* FIXME time */, Medium());
+        Interaction base(w.p0, 0.f /* FIXME time */, MediaTracker());
         while (true) {
             Ray r = base.SpawnRayTo(w.p1);
             if (r.d == Vector3f(0, 0, 0))

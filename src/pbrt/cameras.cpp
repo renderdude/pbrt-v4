@@ -208,7 +208,7 @@ std::string CameraBase::ToString() const {
                         "medium: %s minPosDifferentialX: %s minPosDifferentialY: %s "
                         "minDirDifferentialX: %s minDirDifferentialY: %s ",
                         cameraTransform, shutterOpen, shutterClose, film,
-                        medium ? medium.ToString().c_str() : "(nullptr)",
+                        medium[0] ? medium[0].ToString().c_str() : "(nullptr)",
                         minPosDifferentialX, minPosDifferentialY, minDirDifferentialX,
                         minDirDifferentialY);
 }
@@ -267,10 +267,11 @@ Camera Camera::Create(const std::string &name, const ParameterDictionary &parame
 
 // CameraBaseParameters Method Definitions
 CameraBaseParameters::CameraBaseParameters(const CameraTransform &cameraTransform,
-                                           Film film, Medium medium,
+                                           Film film, Medium medium_,
                                            const ParameterDictionary &parameters,
                                            const FileLoc *loc)
-    : cameraTransform(cameraTransform), film(film), medium(medium) {
+    : cameraTransform(cameraTransform), film(film) {
+        medium.set(medium_);
     shutterOpen = parameters.GetOneFloat("shutteropen", 0.f);
     shutterClose = parameters.GetOneFloat("shutterclose", 1.f);
     if (shutterClose < shutterOpen) {
@@ -287,7 +288,7 @@ pstd::optional<CameraRay> OrthographicCamera::GenerateRay(
     Point3f pFilm = Point3f(sample.pFilm.x, sample.pFilm.y, 0);
     Point3f pCamera = cameraFromRaster(pFilm);
 
-    Ray ray(pCamera, Vector3f(0, 0, 1), SampleTime(sample.time), medium);
+    Ray ray(pCamera, Vector3f(0, 0, 1), medium, SampleTime(sample.time));
     // Modify ray for depth of field
     if (lensRadius > 0) {
         // Sample point on lens
@@ -312,7 +313,7 @@ pstd::optional<CameraRayDifferential> OrthographicCamera::GenerateRayDifferentia
     Point3f pFilm = Point3f(sample.pFilm.x, sample.pFilm.y, 0);
     Point3f pCamera = cameraFromRaster(pFilm);
 
-    RayDifferential ray(pCamera, Vector3f(0, 0, 1), SampleTime(sample.time), medium);
+    RayDifferential ray(pCamera, Vector3f(0, 0, 1), medium, SampleTime(sample.time));
     // Modify ray for depth of field
     if (lensRadius > 0) {
         // Sample point on lens
@@ -407,8 +408,7 @@ pstd::optional<CameraRay> PerspectiveCamera::GenerateRay(
     Point3f pFilm = Point3f(sample.pFilm.x, sample.pFilm.y, 0);
     Point3f pCamera = cameraFromRaster(pFilm);
 
-    Ray ray(Point3f(0, 0, 0), Normalize(Vector3f(pCamera)), SampleTime(sample.time),
-            medium);
+    Ray ray(Point3f(0, 0, 0), Normalize(Vector3f(pCamera)), medium, SampleTime(sample.time));
     // Modify ray for depth of field
     if (lensRadius > 0) {
         // Sample point on lens
@@ -432,7 +432,7 @@ pstd::optional<CameraRayDifferential> PerspectiveCamera::GenerateRayDifferential
     Point3f pFilm = Point3f(sample.pFilm.x, sample.pFilm.y, 0);
     Point3f pCamera = cameraFromRaster(pFilm);
     Vector3f dir = Normalize(Vector3f(pCamera.x, pCamera.y, pCamera.z));
-    RayDifferential ray(Point3f(0, 0, 0), dir, SampleTime(sample.time), medium);
+    RayDifferential ray(Point3f(0, 0, 0), dir, medium, SampleTime(sample.time));
     // Modify ray for depth of field
     if (lensRadius > 0) {
         // Sample point on lens
@@ -625,7 +625,7 @@ pstd::optional<CameraRay> SphericalCamera::GenerateRay(CameraSample sample,
     }
     pstd::swap(dir.y, dir.z);
 
-    Ray ray(Point3f(0, 0, 0), dir, SampleTime(sample.time), medium);
+    Ray ray(Point3f(0, 0, 0), dir, medium, SampleTime(sample.time));
     return CameraRay{RenderFromCamera(ray)};
 }
 
@@ -937,7 +937,7 @@ pstd::optional<CameraRay> RealisticCamera::GenerateRay(CameraSample sample,
 
     // Finish initialization of _RealisticCamera_ ray
     ray.time = SampleTime(sample.time);
-    ray.medium.set(medium);
+    ray.medium = medium;
     ray = RenderFromCamera(ray);
     ray.d = Normalize(ray.d);
 
