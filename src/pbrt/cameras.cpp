@@ -208,7 +208,7 @@ std::string CameraBase::ToString() const {
                         "medium: %s minPosDifferentialX: %s minPosDifferentialY: %s "
                         "minDirDifferentialX: %s minDirDifferentialY: %s ",
                         cameraTransform, shutterOpen, shutterClose, film,
-                        medium[0] ? medium[0].ToString().c_str() : "(nullptr)",
+                        medium.back() ? medium.back().ToString().c_str() : "(nullptr)",
                         minPosDifferentialX, minPosDifferentialY, minDirDifferentialX,
                         minDirDifferentialY);
 }

@@ -97,35 +97,49 @@ class Interaction {
 
     PBRT_CPU_GPU
     RayDifferential SpawnRay(Vector3f d) const {
-        return RayDifferential(OffsetRayOrigin(d), d, time, GetMedium(d));
+        return RayDifferential(OffsetRayOrigin(d), d, GetMedium(d), time);
     }
 
     PBRT_CPU_GPU
     Ray SpawnRayTo(Point3f p2) const {
         Ray r = pbrt::SpawnRayTo(pi, n, time, p2);
-        r.medium.set(GetMedium(r.d));
+        r.medium = GetMedium(r.d);
         return r;
     }
 
     PBRT_CPU_GPU
     Ray SpawnRayTo(const Interaction &it) const {
         Ray r = pbrt::SpawnRayTo(pi, n, time, it.pi, it.n);
-        r.medium.set(GetMedium(r.d));
+        r.medium = GetMedium(r.d);
         return r;
     }
 
     PBRT_CPU_GPU
-    Medium GetMedium(Vector3f w) const {
-        if (mediumInterface)
-            return Dot(w, n) > 0 ? mediumInterface->outside : mediumInterface->inside;
-        return medium[0];
+    MediaTracker GetMedium(Vector3f w) const {
+        if (mediumInterface) {
+            if (Dot(w, n) > 0) {
+                // Transitioning out of current volume
+                if (medium.back() != 0) {
+                    if (medium.back() == mediumInterface->inside)
+                        medium.pop_back();
+                }
+                medium.push_back(mediumInterface->outside);
+            }
+            else {
+                // Transitioning into new volume
+                medium.push_back(mediumInterface->inside);
+            }
+        }
+        return medium;
     }
 
     PBRT_CPU_GPU
-    Medium GetMedium() const {
-        if (mediumInterface)
+    MediaTracker GetMedium() const {
+        if (mediumInterface) {
             DCHECK_EQ(mediumInterface->inside, mediumInterface->outside);
-        return mediumInterface ? mediumInterface->inside : medium[0];
+            medium.push_back(mediumInterface->inside);
+        }
+        return medium;
     }
 
     // Interaction Public Members
@@ -135,7 +149,7 @@ class Interaction {
     Normal3f n;
     Point2f uv;
     const MediumInterface *mediumInterface = nullptr;
-    MediaTracker medium;
+    mutable MediaTracker medium;
 };
 
 // MediumInteraction Definition
@@ -221,12 +235,11 @@ class SurfaceInteraction : public Interaction {
                                    MediaTracker rayMedium) {
         material = mtl;
         areaLight = area;
+        medium = rayMedium;
         CHECK_GE(Dot(n, shading.n), 0.);
         // Set medium properties at surface intersection
         if (primMediumInterface && primMediumInterface->IsMediumTransition())
             mediumInterface = primMediumInterface;
-        else
-            medium = rayMedium;
     }
 
     PBRT_CPU_GPU
