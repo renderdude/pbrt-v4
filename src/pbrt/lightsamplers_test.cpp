@@ -42,7 +42,7 @@ TEST(BVHLightSampling, OneSpot) {
             continue;
         }
 
-        Interaction in(p, 0., (Medium) nullptr);
+        Interaction in(p, 0., nullptr);
         Point2f u{rng.Uniform<Float>(), rng.Uniform<Float>()};
         SampledWavelengths lambda = SampledWavelengths::SampleUniform(0.5);
         pstd::optional<LightLiSample> ls = lights[0].SampleLi(in, u, lambda);
@@ -89,7 +89,7 @@ TEST(BVHLightSampling, Point) {
         std::vector<Float> sumWt(lights.size(), 0.f);
         const int nSamples = 10000;
         for (Float u : Stratified1D(nSamples)) {
-            Interaction intr(p, 0, (Medium) nullptr);
+            Interaction intr(p, 0, nullptr);
             pstd::optional<SampledLight> sampledLight = distrib.Sample(intr, u);
             // Can assume this because it's all point lights
             ASSERT_TRUE((bool)sampledLight);
@@ -215,7 +215,7 @@ TEST(BVHLightSampling, OneTri) {
         Point3f p{Lerp(rng.Uniform<Float>(), -5, 5), Lerp(rng.Uniform<Float>(), -5, 5),
                   Lerp(rng.Uniform<Float>(), -5, 5)};
 
-        Interaction in(p, 0., (Medium) nullptr);
+        Interaction in(p, 0., nullptr);
         Point2f u{rng.Uniform<Float>(), rng.Uniform<Float>()};
         SampledWavelengths lambda = SampledWavelengths::SampleUniform(0.5);
         pstd::optional<LightLiSample> ls = lights[0].SampleLi(in, u, lambda);
