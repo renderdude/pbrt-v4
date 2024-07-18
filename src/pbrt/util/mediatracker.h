@@ -48,6 +48,9 @@ class MediaTracker {
     Medium back() const { return _mediums[_index - 1]; }
 
     PBRT_CPU_GPU
+    int count() const { return _index; }
+
+    PBRT_CPU_GPU
     Medium operator[](int i) const {
         DCHECK(i >= 0 && i < NNestedVolumes);
         return _mediums[i];

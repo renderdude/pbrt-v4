@@ -132,6 +132,9 @@ class HomogeneousMajorantIterator {
 
     std::string ToString() const;
 
+    void SetTmin(Float tmin) {seg.tMin = tmin;}
+    Float GetTmin() {return seg.tMin;}
+
   private:
     RayMajorantSegment seg;
     bool called;
@@ -239,6 +242,9 @@ class DDAMajorantIterator {
     }
 
     std::string ToString() const;
+
+    void SetTmin(Float tmin) {tMin = tmin;}
+    Float GetTmin() {return tMin;}
 
   private:
     // DDAMajorantIterator Private Members
@@ -775,15 +781,27 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     ray.d = Normalize(ray.d);
 
     // Initialize _MajorantIterator_ for ray majorant sampling
-    ConcreteMedium *medium = ray.medium.back().Cast<ConcreteMedium>();
-    typename ConcreteMedium::MajorantIterator iter = medium->SampleRay(ray, tMax, lambda);
+    pstd::vector<ConcreteMedium*> medium;
+    pstd::vector<typename ConcreteMedium::MajorantIterator> iter;
+    std::vector<Float> densities;
+    Float density_probability = 1.0/(float(ray.medium.count()));
+    for (int i = 0; i < ray.medium.count(); ++i)
+    {
+      medium.push_back(ray.medium.back().Cast<ConcreteMedium>());
+      densities.push_back(density_probability);
+      iter.push_back(medium[i]->SampleRay(ray, tMax, lambda));
+    }
 
+    pstd::span<Float> dens_prob(densities);
     // Generate ray majorant samples until termination
     SampledSpectrum T_maj(1.f);
     bool done = false;
+    int med_idx = ray.medium.count() - 1;
     while (!done) {
+        Float um = rng.Uniform<Float>();
+        med_idx = SampleDiscrete(dens_prob, um);
         // Get next majorant segment from iterator and sample it
-        pstd::optional<RayMajorantSegment> seg = iter.Next();
+        pstd::optional<RayMajorantSegment> seg = iter[med_idx].Next();
         if (!seg)
             return T_maj;
         // Handle zero-valued majorant for current segment
@@ -809,7 +827,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
                 // Call callback function for sample within segment
                 PBRT_DBG("t < seg->tMax\n");
                 T_maj *= FastExp(-(t - tMin) * seg->sigma_maj);
-                MediumProperties mp = medium->SamplePoint(ray(t), lambda);
+                MediumProperties mp = medium[med_idx]->SamplePoint(ray(t), lambda);
                 if (!callback(ray(t), mp, seg->sigma_maj, T_maj)) {
                     // Returning out of doubly-nested while loop is not as good perf. wise
                     // on the GPU vs using "done" here.
@@ -830,6 +848,12 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
                 PBRT_DBG("Past end, added dt %f * maj[0] %f\n", dt, seg->sigma_maj[0]);
                 break;
             }
+        }
+
+        // Update all of the iters to the same minimum
+        for (int i = 0; i < ray.medium.count(); ++i)
+        {
+          iter[i].SetTmin(iter[med_idx].GetTmin());
         }
     }
     return SampledSpectrum(1.f);
