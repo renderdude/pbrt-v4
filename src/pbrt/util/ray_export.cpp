@@ -35,7 +35,7 @@ void export_raytree(Photon_Tile &photon_tile) {
         output_file.write((char *)&photons.pixel, sizeof(Point2i));
         std::stringstream ss;
         short size = (short)(photons.segments.size());
-        ss.write((char *)&size, sizeof(short));
+        ss.write((char *)(&size), sizeof(short));
         for (auto &segment : photons.segments) {
             ss.write((char *)&segment.seg_type, sizeof(char));
             Point3f pt = cam_xform.ApplyInverse(segment.start_pt);
@@ -45,8 +45,8 @@ void export_raytree(Photon_Tile &photon_tile) {
             ss.write((char *)&pt, sizeof(Point3f));
         }
         std::string sss = ss.str();
-        size = (short)(sss.size());
-        output_file.write((char *)&size, sizeof(short));
+        int sizei = (int)(sss.size());
+        output_file.write((char *)&sizei, sizeof(int));
         output_file.write(sss.c_str(), sss.size());
     }
 }

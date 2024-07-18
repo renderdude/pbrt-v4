@@ -1078,6 +1078,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                     // Stop path sampling if maximum depth has been
                                     // reached
                                     if (depth++ >= maxDepth) {
+                                        Warning("Hit maxDepth in SampleT_maj");
                                         terminated = true;
                                         return false;
                                     }
@@ -1270,8 +1271,10 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
             ray_tree.segments->push_back(seg);
         }
         // Terminate path if maximum depth reached
-        if (depth++ >= maxDepth)
+        if (depth++ >= maxDepth) {
+            Warning("Hit maxDepth at surface");
             return L;
+        }
 
         ++surfaceInteractions;
         // Possibly regularize the BSDF
