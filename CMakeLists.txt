@@ -21,7 +21,8 @@ option (PBRT_BUILD_NATIVE_EXECUTABLE "Build executable optimized for CPU archite
 option (PBRT_DBG_LOGGING "Enable (very verbose!) debug logging" OFF)
 option (PBRT_NVTX "Insert NVTX annotations for NVIDIA Profiling and Debugging Tools" OFF)
 option (PBRT_NVML "Use NVML for GPU performance measurement" OFF)
-option (PBRT_USE_PREGENERATED_RGB_TO_SPECTRUM_TABLES "Use pregenerated rgbspectrum_*.cpp files rather than running rgb2spec_opt to generate them at build time" OFF)
+option (PBRT_USE_PREGENERATED_RGB_TO_SPECTRUM_TABLES "Use ated rgbspectrum_*.cpp files rather than running rgb2spec_opt to generate them at build time" OFF)
+option (PBRT_USE_KOKKOS "Build using Kokkos for parallel execution" OFF)
 set (PBRT_OPTIX7_PATH $ENV{PBRT_OPTIX7_PATH} CACHE PATH "Path to OptiX 7 SDK")
 set (PBRT_GPU_SHADER_MODEL "" CACHE STRING "")
 
@@ -75,6 +76,7 @@ check_ext ("qoi" "qoi" 028c75fd26e5e0758c7c711216c00404994c1ad3)
 check_ext ("stb" "stb/tools" af1a5bc352164740c1cc1354942b1c6b72eacb8a)
 check_ext ("utf8proc" "utf8proc/bench" 2484e2ed5e1d9c19edcccf392a7d9920ad90dfaf)
 check_ext ("zlib" "zlib/doc" 54d591eabf9fe0e84c725638f8d5d8d202a093fa)
+check_ext ("kokkos" "kokkos/core" ec9e08364b719398e6865bca00abeb934fca58ef)
 add_compile_definitions ("$<$<CONFIG:DEBUG>:PBRT_DEBUG_BUILD>")
 
 enable_testing ()
@@ -96,6 +98,9 @@ if (PBRT_FLOAT_AS_DOUBLE)
 endif ()
 if (PBRT_DBG_LOGGING)
   list (APPEND PBRT_DEFINITIONS "PBRT_DBG_LOGGING")
+endif ()
+if (PBRT_USE_KOKKOS)
+  list (APPEND PBRT_DEFINITIONS "PBRT_USE_KOKKOS")
 endif ()
 
 #######################################

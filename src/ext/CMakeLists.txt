@@ -18,6 +18,17 @@ set (STB_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/stb PARENT_SCOPE)
 set (FILESYSTEM_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/filesystem PARENT_SCOPE)
 
 ###########################################################################
+# kokkos
+
+if (PBRT_USE_KOKKOS)
+  add_subdirectory (kokkos)
+
+  set (KOKKOS_LIBRARIES Kokkos::kokkos PARENT_SCOPE)
+
+  set_property (TARGET kokkos PROPERTY FOLDER "ext")
+endif()
+
+###########################################################################
 # libdeflate
 
 add_subdirectory (libdeflate)
