@@ -12,6 +12,7 @@
 #include <pbrt/util/parallel.h>
 #include <pbrt/util/vecmath.h>
 
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,15 +21,16 @@ namespace pbrt {
 
 using Segment = struct
 {
-    char seg_type;
     Point3f start_pt, end_pt;
 };
 
 using Segment_List = std::vector<Segment>;
+using Segments = std::vector<Segment_List>;
+using Segment_Map = std::map<char, Segments>;
 using Photon_Path = struct
 {
     Point2i pixel;
-    Segment_List segments;
+    Segment_Map segments;
 };
 
 using Photon_Tile = std::vector<Photon_Path>;

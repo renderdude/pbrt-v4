@@ -32,20 +32,39 @@ static Transform cam_xform;
 
 void export_raytree(Photon_Tile &photon_tile) {
     for (auto &photons : photon_tile) {
-        output_file.write((char *)&photons.pixel, sizeof(Point2i));
         std::stringstream ss;
         short size = (short)(photons.segments.size());
+        // 3. How many path types (up to 3, Light, Primary, and Shadow)
         ss.write((char *)(&size), sizeof(short));
-        for (auto &segment : photons.segments) {
-            ss.write((char *)&segment.seg_type, sizeof(char));
-            Point3f pt = cam_xform.ApplyInverse(segment.start_pt);
-            ss.write((char *)&pt, sizeof(Point3f));
-            CHECK_NE(segment.end_pt, Point3f());
-            pt = cam_xform.ApplyInverse(segment.end_pt);
-            ss.write((char *)&pt, sizeof(Point3f));
+        CHECK_NE(size, 0);
+        for (const auto& [key, value] : photons.segments) {
+            // 4. Light path type
+            ss.write((char *)(&key), sizeof(char));
+            size = (short)(value.size());
+            // 5. How many paths of that type
+            ss.write((char *)(&size), sizeof(short));
+            CHECK_NE(size, 0);
+            for (auto &segments : value) {
+                size = (short)(segments.size());
+                // 6. How many segments in the path
+                ss.write((char *)(&size), sizeof(short));
+                CHECK_NE(size, 0);
+                for (auto &segment : segments) {
+                    Point3f pt = cam_xform.ApplyInverse(segment.start_pt);
+                    // 7. start point
+                    ss.write((char *)&pt, sizeof(Point3f));
+                    CHECK_NE(segment.end_pt, Point3f());
+                    pt = cam_xform.ApplyInverse(segment.end_pt);
+                    // 8. end point
+                    ss.write((char *)&pt, sizeof(Point3f));
+                }
+            }
         }
         std::string sss = ss.str();
         int sizei = (int)(sss.size());
+        // 1. pixel
+        output_file.write((char *)&photons.pixel, sizeof(Point2i));
+        // 2. size of binary blob
         output_file.write((char *)&sizei, sizeof(int));
         output_file.write(sss.c_str(), sss.size());
     }
@@ -84,6 +103,11 @@ void ConnectToExporter(const std::string &filename, Camera &camera) {
     output_file.write((char *)&size, sizeof(int));
     size = sizeof(float);
     output_file.write((char *)&size, sizeof(int));
+
+    Point2i pt = camera.GetFilm().PixelBounds().pMin;
+    output_file.write((char *)&pt, sizeof(Point2i));
+    pt = camera.GetFilm().PixelBounds().pMax;
+    output_file.write((char *)&pt, sizeof(Point2i));
 
     updateThread = std::thread(updateDynamicItems);
 }

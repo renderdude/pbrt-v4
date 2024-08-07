@@ -33,7 +33,7 @@ namespace pbrt {
 
 struct Ray_Tree {
     std::vector<char>* current_segment;
-    Segment_List* segments;
+    std::map<char, Segments>* segments;
 };
 
 // Integrator Definition
