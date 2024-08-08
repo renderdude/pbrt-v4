@@ -874,6 +874,10 @@ target_include_directories (pbrt_lib PUBLIC
   ${GLAD_INCLUDE}
 )
 
+if (PBRT_USE_KOKKOS)
+    target_include_directories (pbrt_lib PUBLIC ${KOKKOS_INCLUDE_DIR})
+endif()
+
 if (PBRT_CUDA_ENABLED AND PBRT_OPTIX7_PATH)
     target_include_directories (pbrt_lib SYSTEM PUBLIC ${PBRT_OPTIX7_PATH}/include)
 endif ()
@@ -902,6 +906,10 @@ set (ALL_PBRT_LIBS
   glfw
   glad
   OpenGL::GL)
+
+if (PBRT_USE_KOKKOS)
+  list (APPEND ALL_PBRT_LIBS ${KOKKOS_LIBRARIES})
+endif()
 
 if (PBRT_CUDA_ENABLED)
   set_property (TARGET pbrt_lib PROPERTY CUDA_SEPARABLE_COMPILATION ON)

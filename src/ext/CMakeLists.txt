@@ -23,6 +23,13 @@ set (FILESYSTEM_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/filesystem PARENT_SCOPE)
 if (PBRT_USE_KOKKOS)
   add_subdirectory (kokkos)
 
+  set (KOKKOS_INCLUDE_DIR
+      ${CMAKE_CURRENT_SOURCE_DIR}/kokkos/core/src 
+      ${CMAKE_CURRENT_SOURCE_DIR}/kokkos/tpls/desul/include 
+      ${CMAKE_CURRENT_SOURCE_DIR}/kokkos/tpls/mdspan/include 
+      ${CMAKE_CURRENT_BINARY_DIR}/kokkos
+      ${CMAKE_CURRENT_BINARY_DIR}/kokkos/core/src
+      PARENT_SCOPE)
   set (KOKKOS_LIBRARIES Kokkos::kokkos PARENT_SCOPE)
 
   set_property (TARGET kokkos PROPERTY FOLDER "ext")
