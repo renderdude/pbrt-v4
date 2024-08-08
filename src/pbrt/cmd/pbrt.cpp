@@ -113,6 +113,11 @@ int main(int argc, char *argv[]) {
     std::string renderCoordSys = "cameraworld";
     bool format = false, toPly = false;
 
+#ifdef PBRT_USE_KOKKOS
+    options.argc = &argc;
+    options.argv = &argv;
+#endif
+
     // Process command-line arguments
     for (auto iter = args.begin(); iter != args.end(); ++iter) {
         if ((*iter)[0] != '-') {

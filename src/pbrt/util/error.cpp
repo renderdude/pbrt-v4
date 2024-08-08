@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <mutex>
 #include <string>
+#include "Kokkos_Core.hpp"
 
 #ifdef PBRT_IS_WINDOWS
 #include <windows.h>
@@ -69,6 +70,11 @@ void Error(const FileLoc *loc, const char *message) {
 void ErrorExit(const FileLoc *loc, const char *message) {
     processError("Error", loc, message);
     DisconnectFromDisplayServer();
+    
+#ifdef PBRT_USE_KOKKOS
+    Kokkos::finalize();
+#endif
+
 #ifdef PBRT_IS_OSX
     exit(1);
 #else

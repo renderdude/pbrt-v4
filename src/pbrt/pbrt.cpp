@@ -30,6 +30,10 @@
 #include <Windows.h>
 #endif  // PBRT_IS_WINDOWS
 
+#ifdef PBRT_USE_KOKKOS
+#include <Kokkos_Core.hpp>
+#endif  // PBRT_USE_KOKKOS
+
 namespace pbrt {
 
 #ifdef PBRT_IS_WINDOWS
@@ -59,6 +63,10 @@ static LONG WINAPI handleExceptions(PEXCEPTION_POINTERS info) {
 void InitPBRT(const PBRTOptions &opt) {
     Options = new PBRTOptions(opt);
     // API Initialization
+
+#if defined(PBRT_USE_KOKKOS)
+    Kokkos::initialize( *(opt.argc), *(opt.argv) );
+#endif
 
     Imf::setGlobalThreadCount(opt.nThreads ? opt.nThreads : AvailableCores());
 
@@ -152,6 +160,10 @@ void CleanupPBRT() {
     ParallelCleanup();
 
     ShutdownLogging();
+
+#ifdef PBRT_USE_KOKKOS
+    Kokkos::finalize();
+#endif
 
     Options = nullptr;
 }

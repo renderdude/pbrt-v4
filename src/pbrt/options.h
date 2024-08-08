@@ -20,6 +20,10 @@ std::string ToString(const RenderingCoordinateSystem &);
 
 // BasicPBRTOptions Definition
 struct BasicPBRTOptions {
+#ifdef PBRT_USE_KOKKOS
+    int* argc;
+    char ***argv;
+#endif
     int seed = 0;
     bool quiet = false;
     bool disablePixelJitter = false, disableWavelengthJitter = false;
