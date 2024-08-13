@@ -1322,8 +1322,9 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
         ray = isect.SpawnRay(ray, bsdf, bs->wi, bs->flags, bs->eta);
 
         if (export_ray_tree) {
-            // Connect last pt to the offset ray
-            (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(ray.o);
+            // Connect last pt to the offset ray if it hasn't been set, e.g. we hit the light
+            if ((*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt == Point3f())
+                (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(ray.o);
             // Reset the segment stack, now that we're done with the primary ray.
             ray_tree.current_segment->pop_back();
             ray_tree.current_segment->push_back('S');
