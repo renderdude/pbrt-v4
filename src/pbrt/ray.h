@@ -21,6 +21,7 @@ namespace pbrt {
 
 using Segment = struct
 {
+    char status;
     Point3f start_pt, end_pt;
 };
 

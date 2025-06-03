@@ -298,7 +298,7 @@ void RayIntegrator::EvaluatePixelSample(Point2i pPixel, int sampleIndex, Sampler
     VisibleSurface visibleSurface;
     if (cameraRay) {
         if (export_ray_tree) {
-            Segment seg = {cameraRay->ray.o, Point3f()};
+            Segment seg = {'i', cameraRay->ray.o, Point3f()};
             (*ray_tree.segments)['P'].push_back({seg});
             ray_tree.current_segment->push_back('P');
         }
@@ -1096,7 +1096,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                         if (export_ray_tree)
                                         {
                                             (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = p;
-                                            Segment seg = {p, Point3f()};
+                                            Segment seg = {'i', p, Point3f()};
                                             (*ray_tree.segments)[ray_tree.current_segment->back()].back().push_back(seg);
                                         }
                                         auto sampled_ld = SampleLd(intr, nullptr, lambda,
@@ -1187,7 +1187,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = light_pt;
                             } else {
                                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(ray.o);
-                                Segment seg = {Point3f(ray.o), light_pt};
+                                Segment seg = {'i', Point3f(ray.o), light_pt};
                                 (*ray_tree.segments)['L'].push_back({seg});
                             }
                         }
@@ -1204,6 +1204,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                 // If the primary ray missed everything, we only have a single
                 // value
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = exit_pt;
+                (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().status = 'e';
             }
 
             break;
@@ -1211,6 +1212,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
         SurfaceInteraction &isect = si->intr;
         if (SampledSpectrum Le = isect.Le(-ray.d, lambda); Le) {
             // Add contribution of emission from intersected surface
+            if (export_ray_tree) (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().status = 'h';
             if (depth == 0 || specularBounce)
                 L += beta * Le / r_u.Average();
             else {
@@ -1228,13 +1230,13 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
         if (!bsdf) {
             if (export_ray_tree) {
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(isect.pi);
-                Segment seg = {Point3f(isect.pi), Point3f()};
+                Segment seg = {'i', Point3f(isect.pi), Point3f()};
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().push_back(seg);
             }
             isect.SkipIntersection(&ray, si->tHit);
             if (export_ray_tree) {
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = ray.o;
-                Segment seg = {ray.o, Point3f()};
+                Segment seg = {'i', ray.o, Point3f()};
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().push_back(seg);
             }
             continue;
@@ -1267,7 +1269,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
         // We have a hit!
         if (export_ray_tree) {
             (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(isect.pi);
-            Segment seg = {Point3f(isect.pi), Point3f()};
+            Segment seg = {'i', Point3f(isect.pi), Point3f()};
             (*ray_tree.segments)[ray_tree.current_segment->back()].back().push_back(seg);
         }
         // Terminate path if maximum depth reached
@@ -1328,7 +1330,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
             // Reset the segment stack, now that we're done with the primary ray.
             ray_tree.current_segment->pop_back();
             ray_tree.current_segment->push_back('S');
-            Segment seg = {ray.o, Point3f()};
+            Segment seg = {'i', ray.o, Point3f()};
             (*ray_tree.segments)[ray_tree.current_segment->back()].push_back({seg});
         }
         // Account for attenuated subsurface scattering, if applicable
@@ -1501,7 +1503,7 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
             if ((*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt == Point3f()) {
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = lightRay.o;
             }
-            Segment seg = {lightRay.o, Point3f()};
+            Segment seg = {'i', lightRay.o, Point3f()};
             ray_tree.current_segment->push_back('L');
             (*ray_tree.segments)[ray_tree.current_segment->back()].push_back({seg});
         }
@@ -1574,18 +1576,19 @@ SampledSpectrum VolPathIntegrator::SampleLd(const Interaction &intr, const BSDF 
             break;
         if (export_ray_tree) {
             (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(si->intr.pi);
-            Segment seg = {Point3f(si->intr.pi), Point3f()};
+            Segment seg = {'i', Point3f(si->intr.pi), Point3f()};
             (*ray_tree.segments)[ray_tree.current_segment->back()].back().push_back(seg);
         }
         lightRay = si->intr.SpawnRayTo(ls->pLight);
         if (export_ray_tree) {
             (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(lightRay.o);
-            Segment seg = {Point3f(lightRay.o), Point3f()};
+            Segment seg = {'i', Point3f(lightRay.o), Point3f()};
             (*ray_tree.segments)[ray_tree.current_segment->back()].back().push_back(seg);
         }
     }
     if (export_ray_tree){
         (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = Point3f(ls->pLight.pi);
+        (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().status = 'h';
     }
     // Return path contribution function estimate for direct lighting
     r_l *= r_p * p_l;

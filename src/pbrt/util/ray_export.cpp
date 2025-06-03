@@ -50,12 +50,14 @@ void export_raytree(Photon_Tile &photon_tile) {
                 ss.write((char *)(&size), sizeof(short));
                 CHECK_NE(size, 0);
                 for (auto &segment : segments) {
+                    // 7. status (what happened to this segment)
+                    ss.write((char *)&(segment.status), sizeof(char));
                     Point3f pt = cam_xform.ApplyInverse(segment.start_pt);
-                    // 7. start point
+                    // 8. start point
                     ss.write((char *)&pt, sizeof(Point3f));
                     CHECK_NE(segment.end_pt, Point3f());
                     pt = cam_xform.ApplyInverse(segment.end_pt);
-                    // 8. end point
+                    // 9. end point
                     ss.write((char *)&pt, sizeof(Point3f));
                 }
             }

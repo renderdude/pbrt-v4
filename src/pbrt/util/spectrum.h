@@ -33,6 +33,7 @@ namespace pbrt {
 
 // Spectrum Constants
 constexpr Float Lambda_min = 360, Lambda_max = 830;
+//constexpr Float Lambda_min = 530, Lambda_max = 540;
 
 static constexpr int NSpectrumSamples = 4;
 
