@@ -7,7 +7,9 @@
 #include <pbrt/filters.h>
 #include <pbrt/options.h>
 #ifdef PBRT_BUILD_GPU_RENDERER
-#include <pbrt/gpu/denoiser.h>
+#ifndef __HIP_PLATFORM_AMD__
+#include <pbrt/gpu/optix/denoiser.h>
+#endif // __HIP_PLATFORM_AMD__
 #include <pbrt/gpu/util.h>
 #endif  // PBRT_BUILD_GPU_RENDERER
 #include <pbrt/util/args.h>
@@ -675,7 +677,7 @@ int splitn(std::vector<std::string> args) {
     }
 
     // TODO: we could try to be more clever about carrying through more
-    // metadata, when applciable.
+    // metadata, when applicable.
     ImageMetadata outMetadata;
     outMetadata.colorSpace = colorSpace;
 
@@ -2385,7 +2387,7 @@ int main(int argc, char *argv[]) {
     else if (cmd == "splitn")
         return splitn(args);
     else if (cmd == "noisybit") {
-        // hack for brute force comptuation of ideal filter weights.
+        // hack for brute force computation of ideal filter weights.
 
         argv += 2;
         std::string filename;

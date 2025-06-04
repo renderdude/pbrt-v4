@@ -25,7 +25,7 @@
 #include <nanovdb/util/GridHandle.h>
 #include <nanovdb/util/SampleFromVoxels.h>
 #include <string>
-#ifdef PBRT_BUILD_GPU_RENDERER
+#if defined(PBRT_BUILD_GPU_RENDERER) && defined(__NVCC__)
 #include <nanovdb/util/CudaDeviceBuffer.h>
 #endif  // PBRT_BUILD_GPU_RENDERER
 

@@ -22,7 +22,6 @@
 #include <cmath>
 #include <numeric>
 #include <string>
-#include "pbrt/base/medium.h"
 
 namespace pbrt {
 
@@ -140,14 +139,12 @@ HairMaterial *HairMaterial::Create(const TextureParameterDictionary &parameters,
     SpectrumTexture reflectance =
         parameters.GetSpectrumTextureOrNull("reflectance", SpectrumType::Albedo, alloc);
     if (!reflectance)
-        reflectance =
-            parameters.GetSpectrumTextureOrNull("color", SpectrumType::Albedo, alloc);
+        reflectance = parameters.GetSpectrumTextureOrNull("color", SpectrumType::Albedo, alloc);
     FloatTexture eumelanin = parameters.GetFloatTextureOrNull("eumelanin", alloc);
     FloatTexture pheomelanin = parameters.GetFloatTextureOrNull("pheomelanin", alloc);
     if (sigma_a) {
         if (reflectance)
-            Warning(loc,
-                    R"(Ignoring "reflectance" parameter since "sigma_a" was provided.)");
+            Warning(loc, R"(Ignoring "reflectance" parameter since "sigma_a" was provided.)");
         if (eumelanin)
             Warning(loc, "Ignoring \"eumelanin\" parameter since \"sigma_a\" was "
                          "provided.");
@@ -156,8 +153,7 @@ HairMaterial *HairMaterial::Create(const TextureParameterDictionary &parameters,
                          "provided.");
     } else if (reflectance) {
         if (sigma_a)
-            Warning(loc,
-                    R"(Ignoring "sigma_a" parameter since "reflectance" was provided.)");
+            Warning(loc, R"(Ignoring "sigma_a" parameter since "reflectance" was provided.)");
         if (eumelanin)
             Warning(loc, "Ignoring \"eumelanin\" parameter since \"reflectance\" was "
                          "provided.");
@@ -183,8 +179,8 @@ HairMaterial *HairMaterial::Create(const TextureParameterDictionary &parameters,
     FloatTexture beta_n = parameters.GetFloatTexture("beta_n", 0.3f, alloc);
     FloatTexture alpha = parameters.GetFloatTexture("alpha", 2.f, alloc);
 
-    return alloc.new_object<HairMaterial>(sigma_a, reflectance, eumelanin, pheomelanin,
-                                          eta, beta_m, beta_n, alpha);
+    return alloc.new_object<HairMaterial>(sigma_a, reflectance, eumelanin, pheomelanin, eta,
+                                          beta_m, beta_n, alpha);
 }
 
 // DiffuseMaterial Method Definitions
@@ -256,7 +252,7 @@ ConductorMaterial *ConductorMaterial::Create(const TextureParameterDictionary &p
 
 // CoatedDiffuseMaterial Method Definitions
 template <typename TextureEvaluator>
-CoatedDiffuseBxDF CoatedDiffuseMaterial::GetBxDF(TextureEvaluator texEval,
+PBRT_CPU_GPU CoatedDiffuseBxDF CoatedDiffuseMaterial::GetBxDF(TextureEvaluator texEval,
                                                  const MaterialEvalContext &ctx,
                                                  SampledWavelengths &lambda,
                                                  Allocator alloc) const {
@@ -289,11 +285,11 @@ CoatedDiffuseBxDF CoatedDiffuseMaterial::GetBxDF(TextureEvaluator texEval,
 }
 
 // Explicit template instantiation
-template CoatedDiffuseBxDF CoatedDiffuseMaterial::GetBxDF(BasicTextureEvaluator,
+template PBRT_CPU_GPU CoatedDiffuseBxDF CoatedDiffuseMaterial::GetBxDF(BasicTextureEvaluator,
                                                           const MaterialEvalContext &ctx,
                                                           SampledWavelengths &lambda,
                                                           Allocator alloc) const;
-template CoatedDiffuseBxDF CoatedDiffuseMaterial::GetBxDF(UniversalTextureEvaluator,
+template PBRT_CPU_GPU CoatedDiffuseBxDF CoatedDiffuseMaterial::GetBxDF(UniversalTextureEvaluator,
                                                           const MaterialEvalContext &ctx,
                                                           SampledWavelengths &lambda,
                                                           Allocator alloc) const;
@@ -351,7 +347,7 @@ CoatedDiffuseMaterial *CoatedDiffuseMaterial::Create(
 }
 
 template <typename TextureEvaluator>
-CoatedConductorBxDF CoatedConductorMaterial::GetBxDF(TextureEvaluator texEval,
+PBRT_CPU_GPU CoatedConductorBxDF CoatedConductorMaterial::GetBxDF(TextureEvaluator texEval,
                                                      const MaterialEvalContext &ctx,
                                                      SampledWavelengths &lambda,
                                                      Allocator alloc) const {
@@ -401,10 +397,10 @@ CoatedConductorBxDF CoatedConductorMaterial::GetBxDF(TextureEvaluator texEval,
                                lambda, maxDepth, nSamples);
 }
 
-template CoatedConductorBxDF CoatedConductorMaterial::GetBxDF(
+template PBRT_CPU_GPU CoatedConductorBxDF CoatedConductorMaterial::GetBxDF(
     BasicTextureEvaluator, const MaterialEvalContext &ctx, SampledWavelengths &lambda,
     Allocator alloc) const;
-template CoatedConductorBxDF CoatedConductorMaterial::GetBxDF(
+template PBRT_CPU_GPU CoatedConductorBxDF CoatedConductorMaterial::GetBxDF(
     UniversalTextureEvaluator, const MaterialEvalContext &ctx, SampledWavelengths &lambda,
     Allocator alloc) const;
 
@@ -501,8 +497,8 @@ std::string SubsurfaceMaterial::ToString() const {
     return StringPrintf("[ SubsurfaceMaterial displacement: %s normalMap: %s scale: %f "
                         "sigma_a: %s sigma_s: %s reflectance: %s mfp: %s uRoughness: %s "
                         "vRoughness: %s scale: %f eta: %f remapRoughness: %s ]",
-                        displacement, normalMap, scale, sigma_a, sigma_s, reflectance,
-                        mfp, uRoughness, vRoughness, scale, eta, remapRoughness);
+                        displacement, normalMap, scale, sigma_a, sigma_s, reflectance, mfp,
+                        uRoughness, vRoughness, scale, eta, remapRoughness);
 }
 
 SubsurfaceMaterial *SubsurfaceMaterial::Create(
@@ -686,8 +682,7 @@ Material Material::Create(const std::string &name,
 
             if (materials[i] == nullptr)
                 ErrorExit("%s: an \"interface\" material cannot be used as an element of "
-                          "the \"mix\" material.",
-                          materialNames[i]);
+                          "the \"mix\" material.", materialNames[i]);
         }
         material = MixMaterial::Create(materials, parameters, loc, alloc);
     } else

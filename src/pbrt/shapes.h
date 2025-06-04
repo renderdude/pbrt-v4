@@ -1290,7 +1290,7 @@ PBRT_CPU_GPU inline pstd::optional<BilinearIntersection> IntersectBilinearPatch(
 
     // Find epsilon _eps_ to ensure that candidate $t$ is greater than zero
     Float eps =
-        gamma(10) * (MaxComponentValue(Abs(ray.o)) + MaxComponentValue(Abs(ray.d)) +
+        gamma(30) * (MaxComponentValue(Abs(ray.o)) + MaxComponentValue(Abs(ray.d)) +
                      MaxComponentValue(Abs(p00)) + MaxComponentValue(Abs(p10)) +
                      MaxComponentValue(Abs(p01)) + MaxComponentValue(Abs(p11)));
 
@@ -1538,49 +1538,49 @@ class BilinearPatch {
     static constexpr Float MinSphericalSampleArea = 1e-4;
 };
 
-inline Bounds3f Shape::Bounds() const {
+PBRT_CPU_GPU inline Bounds3f Shape::Bounds() const {
     auto bounds = [&](auto ptr) { return ptr->Bounds(); };
     return Dispatch(bounds);
 }
 
-inline pstd::optional<ShapeIntersection> Shape::Intersect(const Ray &ray,
+PBRT_CPU_GPU inline pstd::optional<ShapeIntersection> Shape::Intersect(const Ray &ray,
                                                           Float tMax) const {
     auto intr = [&](auto ptr) { return ptr->Intersect(ray, tMax); };
     return Dispatch(intr);
 }
 
-inline bool Shape::IntersectP(const Ray &ray, Float tMax) const {
+PBRT_CPU_GPU inline bool Shape::IntersectP(const Ray &ray, Float tMax) const {
     auto intr = [&](auto ptr) { return ptr->IntersectP(ray, tMax); };
     return Dispatch(intr);
 }
 
-inline Float Shape::Area() const {
+PBRT_CPU_GPU inline Float Shape::Area() const {
     auto area = [&](auto ptr) { return ptr->Area(); };
     return Dispatch(area);
 }
 
-inline pstd::optional<ShapeSample> Shape::Sample(Point2f u) const {
+PBRT_CPU_GPU inline pstd::optional<ShapeSample> Shape::Sample(Point2f u) const {
     auto sample = [&](auto ptr) { return ptr->Sample(u); };
     return Dispatch(sample);
 }
 
-inline Float Shape::PDF(const Interaction &in) const {
+PBRT_CPU_GPU inline Float Shape::PDF(const Interaction &in) const {
     auto pdf = [&](auto ptr) { return ptr->PDF(in); };
     return Dispatch(pdf);
 }
 
-inline pstd::optional<ShapeSample> Shape::Sample(const ShapeSampleContext &ctx,
+PBRT_CPU_GPU inline pstd::optional<ShapeSample> Shape::Sample(const ShapeSampleContext &ctx,
                                                  Point2f u) const {
     auto sample = [&](auto ptr) { return ptr->Sample(ctx, u); };
     return Dispatch(sample);
 }
 
-inline Float Shape::PDF(const ShapeSampleContext &ctx, Vector3f wi) const {
+PBRT_CPU_GPU inline Float Shape::PDF(const ShapeSampleContext &ctx, Vector3f wi) const {
     auto pdf = [&](auto ptr) { return ptr->PDF(ctx, wi); };
     return Dispatch(pdf);
 }
 
-inline DirectionCone Shape::NormalBounds() const {
+PBRT_CPU_GPU inline DirectionCone Shape::NormalBounds() const {
     auto nb = [&](auto ptr) { return ptr->NormalBounds(); };
     return Dispatch(nb);
 }
