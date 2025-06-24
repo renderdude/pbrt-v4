@@ -14,10 +14,10 @@
 #include <pbrt/base/medium.h>
 #include <pbrt/base/sampler.h>
 #include <pbrt/ray.h>
-#include "pbrt/util/mediatracker.h"
 #include <pbrt/util/spectrum.h>
 #include <pbrt/util/taggedptr.h>
 #include <pbrt/util/vecmath.h>
+#include "pbrt/util/mediatracker.h"
 
 #include <limits>
 
@@ -124,10 +124,12 @@ class Interaction {
                         medium.pop_back();
                 }
                 medium.push_back(mediumInterface->outside);
-            }
-            else {
-                // Transitioning into new volume
-                medium.push_back(mediumInterface->inside);
+            } else {
+                // Transitioning into new volume, but first check if it's the same volume
+                // This can occur if the medium interface has a reflective material
+                if (medium.back() != mediumInterface->inside) {
+                    medium.push_back(mediumInterface->inside);
+                }
             }
         }
         return medium;

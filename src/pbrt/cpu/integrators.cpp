@@ -1147,8 +1147,12 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                 if (export_ray_tree) {
                     // If end_pt is the default value, the last record is a terminated path,
                     // so remove it.
-                    if ((*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt == Point3f())
+                    if ((*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt == Point3f()) {
                         (*ray_tree.segments)[ray_tree.current_segment->back()].back().pop_back();
+                        if ((*ray_tree.segments)[ray_tree.current_segment->back()].back().size() == 0) {
+                            (*ray_tree.segments)[ray_tree.current_segment->back()].pop_back();
+                        }
+                    }
                 }
                 return L;
             }
@@ -1275,6 +1279,15 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
         // Terminate path if maximum depth reached
         if (depth++ >= maxDepth) {
             Warning("Hit maxDepth at surface");
+            if (export_ray_tree) {
+                // If end_pt is the default value, remove it.
+                if ((*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt == Point3f()) {
+                    (*ray_tree.segments)[ray_tree.current_segment->back()].back().pop_back();
+                    if ((*ray_tree.segments)[ray_tree.current_segment->back()].back().size() == 0) {
+                        (*ray_tree.segments)[ray_tree.current_segment->back()].pop_back();
+                    }
+                }
+            }
             return L;
         }
 
