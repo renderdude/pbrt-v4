@@ -2646,8 +2646,8 @@ SampledSpectrum ConnectBDPT(const Integrator &integrator, SampledWavelengths &la
                      StringPrintf(
                          "General connect s: %d, t: %d, qs: %s, pt: %s, qs.f(pt): %s, "
                          "pt.f(qs): %s, G: %s, dist^2: %f",
-                         s, t, qs, pt, qs.f(pt, TransportMode::Importance),
-                         pt.f(qs, TransportMode::Radiance),
+                         s, t, qs, pt, qs.f(pt, TransportMode::Importance, lambda),
+                         pt.f(qs, TransportMode::Radiance, lambda),
                          G(integrator, sampler, qs, pt, lambda),
                          DistanceSquared(qs.p(), pt.p()))
                          .c_str());

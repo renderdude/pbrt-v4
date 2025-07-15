@@ -192,7 +192,7 @@ inline PBRT_CPU_GPU void TraceTransmittance(ShadowRayWorkItem sr,
         }
 
         if (ray.medium.valid()) {
-            PBRT_DBG("Ray medium %p. Will sample tmaj...\n", ray.medium.ptr());
+            //PBRT_DBG("Ray medium %p. Will sample tmaj...\n", ray.medium.back());
 
             Float tEnd = !result.hit
                              ? tMax
