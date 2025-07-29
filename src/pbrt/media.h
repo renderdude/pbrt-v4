@@ -49,10 +49,13 @@ class HGPhaseFunction {
     HGPhaseFunction(Float g) : g(g) {}
 
     PBRT_CPU_GPU
-    Spectrum p(Vector3f wo, Vector3f wi) const { return new ConstantSpectrum(HenyeyGreenstein(Dot(wo, wi), g)); }
+    Spectrum p(Vector3f wo, Vector3f wi) const {
+        return new ConstantSpectrum(HenyeyGreenstein(Dot(wo, wi), g));
+    }
 
     PBRT_CPU_GPU
-    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u, Float lambda = -1) const {
+    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u,
+                                                 Float lambda = -1) const {
         Float pdf;
         Vector3f wi = SampleHenyeyGreenstein(wo, g, u, &pdf);
         return PhaseFunctionSample{pdf, wi, pdf};
@@ -82,8 +85,9 @@ class TabulatedPhaseFunction {
     Spectrum p(Vector3f wo, Vector3f wi) const;
 
     PBRT_CPU_GPU
-    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u, Float lambda) const;
-    
+    pstd::optional<PhaseFunctionSample> Sample_p(Vector3f wo, Point2f u,
+                                                 Float lambda) const;
+
     PBRT_CPU_GPU
     Float PDF(Vector3f wo, Vector3f wi) const;
 
@@ -98,7 +102,7 @@ class TabulatedPhaseFunction {
     std::vector<Float> _lambdas;
     // Indexed by cos(angle)
     std::map<Float, PiecewiseLinearSpectrum> _phase_values;
-    struct CDF_Map{
+    struct CDF_Map {
         std::map<Float, Float> fwd;
         std::map<Float, Float> rev;
     };
@@ -126,14 +130,18 @@ class HomogeneousMajorantIterator {
     pstd::optional<RayMajorantSegment> Next() {
         if (called)
             return {};
-        called = true;
         return seg;
+    }
+
+    PBRT_CPU_GPU
+    void Advance() {
+        called = true;
     }
 
     std::string ToString() const;
 
-    void SetTmin(Float tmin) {seg.tMin = tmin;}
-    Float GetTmin() {return seg.tMin;}
+    void SetTmin(Float tmin) { seg.tMin = tmin; }
+    Float GetTmin() { return seg.tMin; }
 
   private:
     RayMajorantSegment seg;
@@ -223,11 +231,22 @@ class DDAMajorantIterator {
                    ((nextCrossingT[1] < nextCrossingT[2]));
         const int cmpToAxis[8] = {2, 1, 2, 1, 2, 2, 0, 0};
         int stepAxis = cmpToAxis[bits];
-        Float tVoxelExit = std::min(tMax, nextCrossingT[stepAxis]);
+        tVoxelExit = std::min(tMax, nextCrossingT[stepAxis]);
 
         // Get _maxDensity_ for current voxel and initialize _RayMajorantSegment_, _seg_
         SampledSpectrum sigma_maj = sigma_t * grid->Lookup(voxel[0], voxel[1], voxel[2]);
         RayMajorantSegment seg{tMin, tVoxelExit, sigma_maj};
+
+        return seg;
+    }
+
+    PBRT_CPU_GPU
+    void Advance() {
+        int bits = ((nextCrossingT[0] < nextCrossingT[1]) << 2) +
+                   ((nextCrossingT[0] < nextCrossingT[2]) << 1) +
+                   ((nextCrossingT[1] < nextCrossingT[2]));
+        const int cmpToAxis[8] = {2, 1, 2, 1, 2, 2, 0, 0};
+        int stepAxis = cmpToAxis[bits];
 
         // Advance to next voxel in maximum density grid
         tMin = tVoxelExit;
@@ -238,18 +257,17 @@ class DDAMajorantIterator {
             tMin = tMax;
         nextCrossingT[stepAxis] += deltaT[stepAxis];
 
-        return seg;
     }
 
     std::string ToString() const;
 
-    void SetTmin(Float tmin) {tMin = tmin;}
-    Float GetTmin() {return tMin;}
+    void SetTmin(Float tmin) { tMin = tmin; }
+    Float GetTmin() { return tMin; }
 
   private:
     // DDAMajorantIterator Private Members
     SampledSpectrum sigma_t;
-    Float tMin = Infinity, tMax = -Infinity;
+    Float tMin = Infinity, tMax = -Infinity, tVoxelExit;
     const MajorantGrid *grid;
     Float nextCrossingT[3], deltaT[3];
     int step[3], voxelLimit[3], voxel[3];
@@ -313,8 +331,8 @@ class GridMedium {
     GridMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
                Spectrum sigma_a, Spectrum sigma_s, Float sigmaScale, PhaseFunction phaseF,
                SampledGrid<Float> density, pstd::optional<SampledGrid<Float>> temperature,
-               Float temperatureScale, Float temperatureOffset,
-               Spectrum Le, SampledGrid<Float> LeScale, Allocator alloc);
+               Float temperatureScale, Float temperatureOffset, Spectrum Le,
+               SampledGrid<Float> LeScale, Allocator alloc);
 
     static GridMedium *Create(const ParameterDictionary &parameters,
                               const Transform &renderFromMedium, const FileLoc *loc,
@@ -400,7 +418,8 @@ class RGBGridMedium {
     using MajorantIterator = DDAMajorantIterator;
 
     // RGBGridMedium Public Methods
-    RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium, PhaseFunction phaseF,
+    RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
+                  PhaseFunction phaseF,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_a,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_s,
                   Float sigmaScale, pstd::optional<SampledGrid<RGBIlluminantSpectrum>> Le,
@@ -649,7 +668,8 @@ class NanoVDBMedium {
     std::string ToString() const;
 
     NanoVDBMedium(const Transform &renderFromMedium, Spectrum sigma_a, Spectrum sigma_s,
-                  Float sigmaScale, PhaseFunction phaseF, nanovdb::GridHandle<NanoVDBBuffer> dg,
+                  Float sigmaScale, PhaseFunction phaseF,
+                  nanovdb::GridHandle<NanoVDBBuffer> dg,
                   nanovdb::GridHandle<NanoVDBBuffer> tg, Float LeScale,
                   Float temperatureOffset, Float temperatureScale, Allocator alloc);
 
@@ -725,8 +745,8 @@ inline Spectrum PhaseFunction::p(Vector3f wo, Vector3f wi) const {
     return Dispatch(p);
 }
 
-inline pstd::optional<PhaseFunctionSample> PhaseFunction::Sample_p(Vector3f wo,
-                                                                   Point2f u, Float lambda) const {
+inline pstd::optional<PhaseFunctionSample> PhaseFunction::Sample_p(Vector3f wo, Point2f u,
+                                                                   Float lambda) const {
     auto sample = [&](auto ptr) { return ptr->Sample_p(wo, u, lambda); };
     return Dispatch(sample);
 }
@@ -781,15 +801,16 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     ray.d = Normalize(ray.d);
 
     // Initialize _MajorantIterator_ for ray majorant sampling
-    pstd::vector<ConcreteMedium*> medium;
+    pstd::vector<ConcreteMedium *> medium;
     pstd::vector<typename ConcreteMedium::MajorantIterator> iter;
-    std::vector<Float> densities;
-    Float density_probability = 1.0/(float(ray.medium.count()));
-    for (int i = 0; i < ray.medium.count(); ++i)
-    {
-      medium.push_back(ray.medium.back().Cast<ConcreteMedium>());
-      densities.push_back(density_probability);
-      iter.push_back(medium[i]->SampleRay(ray, tMax, lambda));
+    pstd::vector<Float> densities;
+    pstd::vector<bool> active_mediums;
+    Float density_probability = 1.0 / (float(ray.medium.count()));
+    for (int i = 0; i < ray.medium.count(); ++i) {
+        medium.push_back(ray.medium[i].Cast<ConcreteMedium>());
+        densities.push_back(density_probability);
+        iter.push_back(medium[i]->SampleRay(ray, tMax, lambda));
+        active_mediums.push_back(true);
     }
 
     pstd::span<Float> dens_prob(densities);
@@ -850,11 +871,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
             }
         }
 
-        // Update all of the iters to the same minimum
-        for (int i = 0; i < ray.medium.count(); ++i)
-        {
-          iter[i].SetTmin(iter[med_idx].GetTmin());
-        }
+        iter[med_idx].Advance();
     }
     return SampledSpectrum(1.f);
 }
