@@ -62,6 +62,9 @@ class MediaTracker {
     }
 
     std::string ToString() const {
+        if (count() == 0) {
+            return "";
+        }
         return StringPrintf("[ count = %d, current medium: %s  ]", _index,
                             back().ToString());
     }
