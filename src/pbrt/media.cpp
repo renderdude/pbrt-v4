@@ -72,7 +72,7 @@ std::string DDAMajorantIterator::ToString() const {
                         "nextCrossingT: [ %f %f %f ] deltaT: [ %f %f %f ] "
                         "step: [ %d %d %d ] voxelLimit: [ %d %d %d ] voxel: [ %d %d %d ] "
                         "grid: %p ]",
-                        tMin, tMax, sigma_t, nextCrossingT[0], nextCrossingT[1],
+                        tMin, tMax, _sigma_t, nextCrossingT[0], nextCrossingT[1],
                         nextCrossingT[2], deltaT[0], deltaT[1], deltaT[2], step[0],
                         step[1], step[2], voxelLimit[0], voxelLimit[1], voxelLimit[2],
                         voxel[0], voxel[1], voxel[2], grid);
@@ -389,7 +389,7 @@ GridMedium::GridMedium(const Bounds3f &bounds, const Transform &renderFromMedium
                        Float temperatureScale, Float temperatureOffset, Spectrum Le,
                        SampledGrid<Float> LeGrid, Allocator alloc)
     : bounds(bounds),
-      renderFromMedium(renderFromMedium),
+      _renderFromMedium(renderFromMedium),
       sigma_a_spec(sigma_a, alloc),
       sigma_s_spec(sigma_s, alloc),
       densityGrid(std::move(d)),
@@ -507,7 +507,7 @@ GridMedium *GridMedium::Create(const ParameterDictionary &parameters,
 std::string GridMedium::ToString() const {
     return StringPrintf("[ GridMedium bounds: %s renderFromMedium: %s phase: %s "
                         "LeScale: %f (grids elided) ]",
-                        bounds, renderFromMedium, phase, LeScale);
+                        bounds, _renderFromMedium, phase, LeScale);
 }
 
 // RGBGridMedium Method Definitions
@@ -519,7 +519,7 @@ RGBGridMedium::RGBGridMedium(const Bounds3f &bounds, const Transform &renderFrom
                              pstd::optional<SampledGrid<RGBIlluminantSpectrum>> rgbLe,
                              Float LeScale, Allocator alloc)
     : bounds(bounds),
-      renderFromMedium(renderFromMedium),
+      _renderFromMedium(renderFromMedium),
       phase(phaseF),
       sigma_aGrid(std::move(rgbA)),
       sigma_sGrid(std::move(rgbS)),
@@ -632,7 +632,7 @@ RGBGridMedium *RGBGridMedium::Create(const ParameterDictionary &parameters,
 std::string RGBGridMedium::ToString() const {
     return StringPrintf("[ RGBGridMedium bounds: %s renderFromMedium: %s phase: %s "
                         "sigmaScale: %f LeScale: %f (grids elided) ]",
-                        bounds, renderFromMedium, phase, sigmaScale, LeScale);
+                        bounds, _renderFromMedium, phase, sigmaScale, LeScale);
 }
 
 // CloudMedium Method Definitions
@@ -693,7 +693,7 @@ NanoVDBMedium::NanoVDBMedium(const Transform &renderFromMedium, Spectrum sigma_a
                              nanovdb::GridHandle<NanoVDBBuffer> tg, Float LeScale,
                              Float temperatureOffset, Float temperatureScale,
                              Allocator alloc)
-    : renderFromMedium(renderFromMedium),
+    : _renderFromMedium(renderFromMedium),
       sigma_a_spec(sigma_a, alloc),
       sigma_s_spec(sigma_s, alloc),
       phase(phaseF),

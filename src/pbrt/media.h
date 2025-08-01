@@ -25,13 +25,14 @@
 #include <nanovdb/util/GridHandle.h>
 #include <nanovdb/util/SampleFromVoxels.h>
 #include <string>
+#include "pbrt/util/check.h"
+#include "pbrt/util/log.h"
 #if defined(PBRT_BUILD_GPU_RENDERER) && defined(__NVCC__)
 #include <nanovdb/util/CudaDeviceBuffer.h>
 #endif  // PBRT_BUILD_GPU_RENDERER
 
 #include <algorithm>
 #include <limits>
-#include <memory>
 #include <vector>
 
 namespace pbrt {
@@ -123,7 +124,8 @@ class HomogeneousMajorantIterator {
     PBRT_CPU_GPU
     HomogeneousMajorantIterator() : called(true) {}
     PBRT_CPU_GPU
-    HomogeneousMajorantIterator(Float tMin, Float tMax, SampledSpectrum sigma_maj)
+    HomogeneousMajorantIterator(Float tMin, Float tMax, SampledSpectrum sigma_maj,
+                                bool use_unity_for_sigma_t = false)
         : seg{tMin, tMax, sigma_maj}, called(false) {}
 
     PBRT_CPU_GPU
@@ -134,14 +136,14 @@ class HomogeneousMajorantIterator {
     }
 
     PBRT_CPU_GPU
-    void Advance() {
-        called = true;
-    }
+    void Advance() { called = true; }
 
     std::string ToString() const;
 
-    void SetTmin(Float tmin) { seg.tMin = tmin; }
-    Float GetTmin() { return seg.tMin; }
+    // Dummy routines to make compiler happy. May need something real in future
+    SampledSpectrum sigma_t() { return SampledSpectrum(1.0); }
+    Ray ray() { return Ray(); }
+    void SetTmin(Float tmin) {}
 
   private:
     RayMajorantSegment seg;
@@ -186,8 +188,13 @@ class DDAMajorantIterator {
     DDAMajorantIterator() = default;
     PBRT_CPU_GPU
     DDAMajorantIterator(Ray ray, Float tMin, Float tMax, const MajorantGrid *grid,
-                        SampledSpectrum sigma_t)
-        : tMin(tMin), tMax(tMax), grid(grid), sigma_t(sigma_t) {
+                        SampledSpectrum sigma_t, bool use_unity_for_sigma_t = false)
+        : _ray(ray),
+          tMin(tMin),
+          tMax(tMax),
+          grid(grid),
+          _sigma_t(sigma_t),
+          use_unity_for_sigma_t(use_unity_for_sigma_t) {
         // Set up 3D DDA for ray through the majorant grid
         Vector3f diag = grid->bounds.Diagonal();
         Ray rayGrid(Point3f(grid->bounds.Offset(ray.o)),
@@ -234,7 +241,9 @@ class DDAMajorantIterator {
         tVoxelExit = std::min(tMax, nextCrossingT[stepAxis]);
 
         // Get _maxDensity_ for current voxel and initialize _RayMajorantSegment_, _seg_
-        SampledSpectrum sigma_maj = sigma_t * grid->Lookup(voxel[0], voxel[1], voxel[2]);
+        SampledSpectrum sigma_maj =
+            (use_unity_for_sigma_t ? SampledSpectrum(1.0) : _sigma_t) *
+            grid->Lookup(voxel[0], voxel[1], voxel[2]);
         RayMajorantSegment seg{tMin, tVoxelExit, sigma_maj};
 
         return seg;
@@ -256,21 +265,154 @@ class DDAMajorantIterator {
         if (voxel[stepAxis] == voxelLimit[stepAxis])
             tMin = tMax;
         nextCrossingT[stepAxis] += deltaT[stepAxis];
-
     }
 
     std::string ToString() const;
-
     void SetTmin(Float tmin) { tMin = tmin; }
-    Float GetTmin() { return tMin; }
+    Ray &ray() { return _ray; }
+    SampledSpectrum &sigma_t() { return _sigma_t; }
 
   private:
     // DDAMajorantIterator Private Members
-    SampledSpectrum sigma_t;
+    Ray _ray;
+    SampledSpectrum _sigma_t;
     Float tMin = Infinity, tMax = -Infinity, tVoxelExit;
     const MajorantGrid *grid;
     Float nextCrossingT[3], deltaT[3];
     int step[3], voxelLimit[3], voxel[3];
+    bool use_unity_for_sigma_t;
+};
+
+// MultiVolumeMajorantIterator Definition
+template <typename ConcreteMedium>
+class MultiVolumeMajorantIterator {
+  public:
+    // MultiVolumeMajorantIterator Public Methods
+    MultiVolumeMajorantIterator() = default;
+    PBRT_CPU_GPU
+    MultiVolumeMajorantIterator(Ray ray, pstd::vector<ConcreteMedium *> medium,
+                                Float tMax, const SampledWavelengths &lambda)
+        : ray(ray), medium(medium), _tMin(ray.medium.count()), _tMax(ray.medium.count()) {
+        for (int i = 0; i < ray.medium.count(); ++i) {
+            iter.push_back(medium[i]->SampleRay(ray, tMax, lambda, true));
+        }
+    }
+
+    PBRT_CPU_GPU
+    pstd::optional<RayMajorantSegment> Next() {
+        active_mediums.clear();
+        // Get valid segements
+        std::vector<pstd::optional<RayMajorantSegment>> segs(medium.size());
+        SampledSpectrum sigma_t(0.0);
+        bool is_active = false;
+        for (auto i = 0; i < medium.size(); i++) {
+            auto seg = iter[i].Next();
+            segs[i] = seg;
+            if (seg) {
+                sigma_t += iter[i].sigma_t();
+                active_mediums.push_back(i);
+                is_active = true;
+            }
+        }
+
+        if (is_active) {
+            tVals.clear();
+            // Find combined start and end across all mediums
+            for (auto idx : active_mediums) {
+                auto pt = iter[idx].ray()(segs[idx]->tMin);
+                pt = medium[idx]->renderFromMedium()(pt);
+                Float t = Dot(ray.d, (pt - ray.o)) / Dot(ray.d, ray.d);
+                tVals.push_back(t);
+                _tMin[idx] = t;
+                pt = iter[idx].ray()(segs[idx]->tMax);
+                pt = medium[idx]->renderFromMedium()(pt);
+                t = Dot(ray.d, (pt - ray.o)) / Dot(ray.d, ray.d);
+                tVals.push_back(t);
+                _tMax[idx] = t;
+            }
+
+            std::sort(tVals.begin(), tVals.end());
+
+            SampledSpectrum sigma_maj(0.0);
+            for (auto &seg : segs) {
+                if (seg) {
+                    sigma_maj += seg->sigma_maj;
+                }
+            }
+
+            RayMajorantSegment seg{tVals[0], tVals[1], sigma_t * sigma_maj};
+
+            return seg;
+        }
+
+        return {};
+    }
+
+    PBRT_CPU_GPU
+    void update_tmin(int idx, Float t_val) {
+        Ray it_ray = iter[idx].ray();
+        auto pt = ray(t_val);
+        pt = medium[idx]->renderFromMedium().ApplyInverse(pt);
+        Float t = Dot(it_ray.d, (pt - it_ray.o)) / Dot(it_ray.d, it_ray.d);
+        iter[idx].SetTmin(t);
+    }
+
+    PBRT_CPU_GPU
+    void Advance() {
+        for (auto idx : active_mediums) {
+            // We have 5 possibilities here:
+            // The segment started at the entry to the voxel ...
+            if (_tMin[idx] == tVals[0]) {
+                // 1. ..., but terminated before exit
+                //    - Update tMin for this iterator
+                if (_tMax[idx] > tVals[1]) {
+                    update_tmin(idx, tVals[1]);
+                }
+                // 2. Segment traverses voxel
+                //    - Advance
+                else if (_tMax[idx] == tVals[1]) {
+                    iter[idx].Advance();
+                } else {
+                    LOG_ERROR("Case not caught by Advance, segment (%f, "
+                              "%f), medium iterator segment [%f, %f].",
+                              tVals[0], tVals[1], _tMin[idx], _tMax[idx]);
+                    CHECK(false);
+                }
+            }
+            // 2. Segment starts in the middle, but ends at on exit boundary
+            //    - Advance
+            else if ((_tMin[idx] < tVals[0]) && (_tMax[idx] == tVals[1])) {
+                iter[idx].Advance();
+            }
+            // 3. Segment starts and ends within voxel
+            //    - Update tMin to tMax
+            else if ((_tMin[idx] < tVals[0]) && (_tMax[idx] > tVals[1])) {
+                update_tmin(idx, tVals[1]);
+            }
+            // 5. Segment is before voxel
+            //    - Update tMin for this iterator
+            else if ((_tMin[idx] > tVals[0]) && (_tMin[idx] <= tVals[1])) {
+                update_tmin(idx, tVals[1]);
+            }
+            // 6. We have a boo-boo
+            else {
+                LOG_ERROR("Case not caught by Advance, segment (%f, "
+                          "%f), medium iterator segment [%f, %f].",
+                          tVals[0], tVals[1], _tMin[idx], _tMax[idx]);
+                CHECK(false);
+            }
+        }
+    }
+
+    std::string ToString() const;
+
+  private:
+    // MultiVolumeMajorantIterator Private Members
+    Ray ray;
+    pstd::vector<ConcreteMedium *> medium;
+    std::vector<int> active_mediums;
+    std::vector<typename ConcreteMedium::MajorantIterator> iter;
+    std::vector<Float> densities, _tMin, _tMax, tVals;
 };
 
 // HomogeneousMedium Definition
@@ -307,13 +449,19 @@ class HomogeneousMedium {
 
     PBRT_CPU_GPU
     HomogeneousMajorantIterator SampleRay(Ray ray, Float tMax,
-                                          const SampledWavelengths &lambda) const {
+                                          const SampledWavelengths &lambda,
+                                          bool use_unity_for_sigma_t = false) const {
         SampledSpectrum sigma_a = sigma_a_spec.Sample(lambda);
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
-        return HomogeneousMajorantIterator(0, tMax, sigma_a + sigma_s);
+        SampledSpectrum sigma_t = sigma_a + sigma_s;
+
+        return HomogeneousMajorantIterator(0, tMax, sigma_t, use_unity_for_sigma_t);
     }
 
     std::string ToString() const;
+
+    PBRT_CPU_GPU
+    Transform renderFromMedium() { return Transform(); }
 
   private:
     // HomogeneousMedium Private Data
@@ -350,7 +498,7 @@ class GridMedium {
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
 
         // Scale scattering coefficients by medium density at _p_
-        p = renderFromMedium.ApplyInverse(p);
+        p = _renderFromMedium.ApplyInverse(p);
         p = Point3f(bounds.Offset(p));
         Float d = densityGrid.Lookup(p);
         sigma_a *= d;
@@ -380,9 +528,10 @@ class GridMedium {
 
     PBRT_CPU_GPU
     DDAMajorantIterator SampleRay(Ray ray, Float raytMax,
-                                  const SampledWavelengths &lambda) const {
+                                  const SampledWavelengths &lambda,
+                                  bool use_unity_for_sigma_t = false) const {
         // Transform ray to medium's space and compute bounds overlap
-        ray = renderFromMedium.ApplyInverse(ray, &raytMax);
+        ray = _renderFromMedium.ApplyInverse(ray, &raytMax);
         Float tMin, tMax;
         if (!bounds.IntersectP(ray.o, ray.d, raytMax, &tMin, &tMax))
             return {};
@@ -393,13 +542,18 @@ class GridMedium {
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
 
         SampledSpectrum sigma_t = sigma_a + sigma_s;
-        return DDAMajorantIterator(ray, tMin, tMax, &majorantGrid, sigma_t);
+
+        return DDAMajorantIterator(ray, tMin, tMax, &majorantGrid, sigma_t,
+                                   use_unity_for_sigma_t);
     }
+
+    PBRT_CPU_GPU
+    Transform renderFromMedium() { return _renderFromMedium; }
 
   private:
     // GridMedium Private Members
     Bounds3f bounds;
-    Transform renderFromMedium;
+    Transform _renderFromMedium;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
     SampledGrid<Float> densityGrid;
     PhaseFunction phase;
@@ -418,7 +572,7 @@ class RGBGridMedium {
     using MajorantIterator = DDAMajorantIterator;
 
     // RGBGridMedium Public Methods
-    RGBGridMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
+    RGBGridMedium(const Bounds3f &bounds, const Transform &_renderFromMedium,
                   PhaseFunction phaseF,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_a,
                   pstd::optional<SampledGrid<RGBUnboundedSpectrum>> sigma_s,
@@ -426,7 +580,7 @@ class RGBGridMedium {
                   Float LeScale, Allocator alloc);
 
     static RGBGridMedium *Create(const ParameterDictionary &parameters,
-                                 const Transform &renderFromMedium, const FileLoc *loc,
+                                 const Transform &_renderFromMedium, const FileLoc *loc,
                                  Allocator alloc);
 
     std::string ToString() const;
@@ -436,7 +590,7 @@ class RGBGridMedium {
 
     PBRT_CPU_GPU
     MediumProperties SamplePoint(Point3f p, const SampledWavelengths &lambda) const {
-        p = renderFromMedium.ApplyInverse(p);
+        p = _renderFromMedium.ApplyInverse(p);
         p = Point3f(bounds.Offset(p));
         // Compute $\sigmaa$ and $\sigmas$ for _RGBGridMedium_
         auto convert = [=] PBRT_CPU_GPU(RGBUnboundedSpectrum s) {
@@ -463,22 +617,27 @@ class RGBGridMedium {
 
     PBRT_CPU_GPU
     DDAMajorantIterator SampleRay(Ray ray, Float raytMax,
-                                  const SampledWavelengths &lambda) const {
+                                  const SampledWavelengths &lambda,
+                                  bool use_unity_for_sigma_t = false) const {
         // Transform ray to medium's space and compute bounds overlap
-        ray = renderFromMedium.ApplyInverse(ray, &raytMax);
+        ray = _renderFromMedium.ApplyInverse(ray, &raytMax);
         Float tMin, tMax;
         if (!bounds.IntersectP(ray.o, ray.d, raytMax, &tMin, &tMax))
             return {};
         DCHECK_LE(tMax, raytMax);
 
         SampledSpectrum sigma_t(1);
-        return DDAMajorantIterator(ray, tMin, tMax, &majorantGrid, sigma_t);
+        return DDAMajorantIterator(ray, tMin, tMax, &majorantGrid, sigma_t,
+                                   use_unity_for_sigma_t);
     }
+
+    PBRT_CPU_GPU
+    Transform renderFromMedium() { return _renderFromMedium; }
 
   private:
     // RGBGridMedium Private Members
     Bounds3f bounds;
-    Transform renderFromMedium;
+    Transform _renderFromMedium;
     pstd::optional<SampledGrid<RGBIlluminantSpectrum>> LeGrid;
     Float LeScale;
     PhaseFunction phase;
@@ -495,22 +654,22 @@ class CloudMedium {
 
     // CloudMedium Public Methods
     static CloudMedium *Create(const ParameterDictionary &parameters,
-                               const Transform &renderFromMedium, const FileLoc *loc,
+                               const Transform &_renderFromMedium, const FileLoc *loc,
                                Allocator alloc);
 
     std::string ToString() const {
-        return StringPrintf("[ CloudMedium bounds: %s renderFromMedium: %s phase: %s "
+        return StringPrintf("[ CloudMedium bounds: %s _renderFromMedium: %s phase: %s "
                             "sigma_a_spec: %s sigma_s_spec: %s density: %f wispiness: %f "
                             "frequency: %f ]",
-                            bounds, renderFromMedium, phase, sigma_a_spec, sigma_s_spec,
+                            bounds, _renderFromMedium, phase, sigma_a_spec, sigma_s_spec,
                             density, wispiness, frequency);
     }
 
-    CloudMedium(const Bounds3f &bounds, const Transform &renderFromMedium,
+    CloudMedium(const Bounds3f &bounds, const Transform &_renderFromMedium,
                 Spectrum sigma_a, Spectrum sigma_s, PhaseFunction phaseF, Float density,
                 Float wispiness, Float frequency, Allocator alloc)
         : bounds(bounds),
-          renderFromMedium(renderFromMedium),
+          _renderFromMedium(_renderFromMedium),
           sigma_a_spec(sigma_a, alloc),
           sigma_s_spec(sigma_s, alloc),
           phase(phaseF),
@@ -524,7 +683,7 @@ class CloudMedium {
     PBRT_CPU_GPU
     MediumProperties SamplePoint(Point3f p, const SampledWavelengths &lambda) const {
         // Compute sampled spectra for cloud $\sigmaa$ and $\sigmas$ at _p_
-        Float density = Density(renderFromMedium.ApplyInverse(p));
+        Float density = Density(_renderFromMedium.ApplyInverse(p));
         SampledSpectrum sigma_a = density * sigma_a_spec.Sample(lambda);
         SampledSpectrum sigma_s = density * sigma_s_spec.Sample(lambda);
 
@@ -533,9 +692,10 @@ class CloudMedium {
 
     PBRT_CPU_GPU
     HomogeneousMajorantIterator SampleRay(Ray ray, Float raytMax,
-                                          const SampledWavelengths &lambda) const {
+                                          const SampledWavelengths &lambda,
+                                          bool use_unity_for_sigma_t = false) const {
         // Transform ray to medium's space and compute bounds overlap
-        ray = renderFromMedium.ApplyInverse(ray, &raytMax);
+        ray = _renderFromMedium.ApplyInverse(ray, &raytMax);
         Float tMin, tMax;
         if (!bounds.IntersectP(ray.o, ray.d, raytMax, &tMin, &tMax))
             return {};
@@ -545,8 +705,11 @@ class CloudMedium {
         SampledSpectrum sigma_a = sigma_a_spec.Sample(lambda);
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
         SampledSpectrum sigma_t = sigma_a + sigma_s;
-        return HomogeneousMajorantIterator(tMin, tMax, sigma_t);
+        return HomogeneousMajorantIterator(tMin, tMax, sigma_t, use_unity_for_sigma_t);
     }
+
+    PBRT_CPU_GPU
+    Transform renderFromMedium() { return _renderFromMedium; }
 
   private:
     // CloudMedium Private Methods
@@ -579,7 +742,7 @@ class CloudMedium {
 
     // CloudMedium Private Members
     Bounds3f bounds;
-    Transform renderFromMedium;
+    Transform _renderFromMedium;
     PhaseFunction phase;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
     Float density, wispiness, frequency;
@@ -683,7 +846,7 @@ class NanoVDBMedium {
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
 
         // Scale scattering coefficients by medium density at _p_
-        p = renderFromMedium.ApplyInverse(p);
+        p = _renderFromMedium.ApplyInverse(p);
 
         nanovdb::Vec3<float> pIndex =
             densityFloatGrid->worldToIndexF(nanovdb::Vec3<float>(p.x, p.y, p.z));
@@ -695,9 +858,10 @@ class NanoVDBMedium {
 
     PBRT_CPU_GPU
     DDAMajorantIterator SampleRay(Ray ray, Float raytMax,
-                                  const SampledWavelengths &lambda) const {
+                                  const SampledWavelengths &lambda,
+                                  bool use_unity_for_sigma_t = false) const {
         // Transform ray to medium's space and compute bounds overlap
-        ray = renderFromMedium.ApplyInverse(ray, &raytMax);
+        ray = _renderFromMedium.ApplyInverse(ray, &raytMax);
         Float tMin, tMax;
         if (!bounds.IntersectP(ray.o, ray.d, raytMax, &tMin, &tMax))
             return {};
@@ -708,8 +872,12 @@ class NanoVDBMedium {
         SampledSpectrum sigma_s = sigma_s_spec.Sample(lambda);
 
         SampledSpectrum sigma_t = sigma_a + sigma_s;
-        return DDAMajorantIterator(ray, tMin, tMax, &majorantGrid, sigma_t);
+        return DDAMajorantIterator(ray, tMin, tMax, &majorantGrid, sigma_t,
+                                   use_unity_for_sigma_t);
     }
+
+    PBRT_CPU_GPU
+    Transform renderFromMedium() { return _renderFromMedium; }
 
   private:
     // NanoVDBMedium Private Methods
@@ -729,7 +897,7 @@ class NanoVDBMedium {
 
     // NanoVDBMedium Private Members
     Bounds3f bounds;
-    Transform renderFromMedium;
+    Transform _renderFromMedium;
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec;
     PhaseFunction phase;
     MajorantGrid majorantGrid;
@@ -793,6 +961,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     return ray.medium.back().Dispatch(sample);
 }
 
+#if 0
 template <typename ConcreteMedium, typename F>
 PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
                                          const SampledWavelengths &lambda, F callback) {
@@ -804,14 +973,13 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     pstd::vector<ConcreteMedium *> medium;
     pstd::vector<typename ConcreteMedium::MajorantIterator> iter;
     pstd::vector<Float> densities;
-    pstd::vector<bool> active_mediums;
     Float density_probability = 1.0 / (float(ray.medium.count()));
     for (int i = 0; i < ray.medium.count(); ++i) {
         medium.push_back(ray.medium[i].Cast<ConcreteMedium>());
         densities.push_back(density_probability);
         iter.push_back(medium[i]->SampleRay(ray, tMax, lambda));
-        active_mediums.push_back(true);
     }
+    MultiVolumeMajorantIterator<ConcreteMedium> mv_iter(ray, medium, tMax, lambda);
 
     pstd::span<Float> dens_prob(densities);
     // Generate ray majorant samples until termination
@@ -875,7 +1043,112 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     }
     return SampledSpectrum(1.f);
 }
+#else
+PBRT_CPU_GPU
+template <typename ConcreteMedium>
+void update_tmin(typename ConcreteMedium::MajorantIterator iter, ConcreteMedium *medium,
+                 Ray &ray, Float t_val) {
+    Ray it_ray = iter.ray();
+    auto pt = ray(t_val);
+    pt = medium->renderFromMedium().ApplyInverse(pt);
+    Float t = Dot(it_ray.d, (pt - it_ray.o)) / Dot(it_ray.d, it_ray.d);
+    iter.SetTmin(t);
+}
 
+template <typename ConcreteMedium, typename F>
+PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
+                                         const SampledWavelengths &lambda, F callback) {
+    // Normalize ray direction and update _tMax_ accordingly
+    tMax *= Length(ray.d);
+    ray.d = Normalize(ray.d);
+
+    // Initialize _MajorantIterator_ for ray majorant sampling
+    pstd::vector<ConcreteMedium *> medium;
+    pstd::vector<typename ConcreteMedium::MajorantIterator> iter;
+    pstd::vector<Float> densities;
+    SampledSpectrum sigma_t(0.0);
+
+    Float density_probability = 1.0 / (float(ray.medium.count()));
+    for (int i = 0; i < ray.medium.count(); ++i) {
+        medium.push_back(ray.medium[i].Cast<ConcreteMedium>());
+        densities.push_back(density_probability);
+        iter.push_back(medium[i]->SampleRay(ray, tMax, lambda, true));
+        sigma_t += iter[i].sigma_t();
+    }
+
+    pstd::span<Float> dens_prob(densities);
+    // Generate ray majorant samples until termination
+    SampledSpectrum T_maj(1.f);
+    bool done = false;
+    int med_idx = ray.medium.count() - 1;
+    while (!done) {
+        Float um = rng.Uniform<Float>();
+        med_idx = SampleDiscrete(dens_prob, um);
+        // Get next majorant segment from iterator and sample it
+        pstd::optional<RayMajorantSegment> seg = iter[med_idx].Next();
+        if (!seg)
+            return T_maj;
+        // Handle zero-valued majorant for current segment
+        SampledSpectrum orig_sigma_maj = iter[med_idx].sigma_t() * seg->sigma_maj;
+        seg->sigma_maj = sigma_t * seg->sigma_maj;
+        if (seg->sigma_maj[0] == 0) {
+            Float dt = seg->tMax - seg->tMin;
+            // Handle infinite _dt_ for ray majorant segment
+            if (IsInf(dt))
+                dt = std::numeric_limits<Float>::max();
+
+            T_maj *= FastExp(-dt * seg->sigma_maj);
+            continue;
+        }
+
+        // Generate samples along current majorant segment
+        Float tMin = seg->tMin;
+        while (true) {
+            // Try to generate sample along current majorant segment
+            Float t = tMin + SampleExponential(u, seg->sigma_maj[0]);
+            PBRT_DBG("Sampled t = %f from tMin %f u %f sigma_maj[0] %f\n", t, tMin, u,
+                     seg->sigma_maj[0]);
+            u = rng.Uniform<Float>();
+            if (t < seg->tMax) {
+                // Call callback function for sample within segment
+                PBRT_DBG("t < seg->tMax\n");
+                T_maj *= FastExp(-(t - tMin) * seg->sigma_maj);
+                MediumProperties mp = medium[med_idx]->SamplePoint(ray(t), lambda);
+                if (!callback(ray(t), mp, orig_sigma_maj, T_maj)) {
+                    // Returning out of doubly-nested while loop is not as good perf. wise
+                    // on the GPU vs using "done" here.
+                    done = true;
+                    break;
+                }
+                T_maj = SampledSpectrum(1.f);
+                tMin = t;
+
+            } else {
+                // Handle sample past end of majorant segment
+                Float dt = seg->tMax - tMin;
+                // Handle infinite _dt_ for ray majorant segment
+                if (IsInf(dt))
+                    dt = std::numeric_limits<Float>::max();
+
+                T_maj *= FastExp(-dt * seg->sigma_maj);
+                PBRT_DBG("Past end, added dt %f * maj[0] %f\n", dt, seg->sigma_maj[0]);
+                break;
+            }
+        }
+
+        iter[med_idx].Advance();
+        for (int i = 0; i < ray.medium.count(); ++i) {
+            if (i != med_idx) {
+                auto pt = iter[i].ray()(seg->tMin);
+                pt = medium[i]->renderFromMedium()(pt);
+                Float t = Dot(ray.d, (pt - ray.o)) / Dot(ray.d, ray.d);
+                update_tmin(iter[i], medium[i], ray, t);
+            }
+        }
+    }
+    return SampledSpectrum(1.f);
+}
+#endif
 }  // namespace pbrt
 
 #endif  // PBRT_MEDIA_H
