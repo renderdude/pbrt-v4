@@ -1063,9 +1063,9 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     ray.d = Normalize(ray.d);
 
     // Initialize _MajorantIterator_ for ray majorant sampling
-    pstd::vector<ConcreteMedium *> medium;
-    pstd::vector<typename ConcreteMedium::MajorantIterator> iter;
-    pstd::vector<Float> densities;
+    std::vector<ConcreteMedium *> medium;
+    std::vector<typename ConcreteMedium::MajorantIterator> iter;
+    std::vector<Float> densities;
     SampledSpectrum sigma_t(0.0);
 
     Float density_probability = 1.0 / (float(ray.medium.count()));
@@ -1080,14 +1080,31 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     // Generate ray majorant samples until termination
     SampledSpectrum T_maj(1.f);
     bool done = false;
-    int med_idx = ray.medium.count() - 1;
+    int med_idx = 0;
+    RNG rng2(rng);
     while (!done) {
-        Float um = rng.Uniform<Float>();
+        Float um = rng2.Uniform<Float>();
         med_idx = SampleDiscrete(dens_prob, um);
         // Get next majorant segment from iterator and sample it
         pstd::optional<RayMajorantSegment> seg = iter[med_idx].Next();
-        if (!seg)
-            return T_maj;
+        if (!seg) {
+            // Remove this medium and continue processing until there are no more active
+            // mediums
+            sigma_t -= iter[med_idx].sigma_t();
+            medium.erase(medium.begin()+med_idx);
+            // Short-circuit exit
+            if (medium.size() == 0) {
+                return T_maj;
+            }
+            densities.erase(densities.begin()+med_idx);
+            Float sum = std::accumulate(densities.begin(), densities.end(), 0.0);
+            std::transform(densities.begin(), densities.end(), densities.begin(),
+                       [sum](Float val) { return val / sum; });
+            dens_prob = pstd::span<Float>(densities);
+
+            iter.erase(iter.begin()+med_idx);
+            continue;
+        }
         // Handle zero-valued majorant for current segment
         SampledSpectrum orig_sigma_maj = iter[med_idx].sigma_t() * seg->sigma_maj;
         seg->sigma_maj = sigma_t * seg->sigma_maj;
@@ -1137,7 +1154,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
         }
 
         iter[med_idx].Advance();
-        for (int i = 0; i < ray.medium.count(); ++i) {
+        for (int i = 0; i < medium.size(); ++i) {
             if (i != med_idx) {
                 auto pt = iter[i].ray()(seg->tMin);
                 pt = medium[i]->renderFromMedium()(pt);
