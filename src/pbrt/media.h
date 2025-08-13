@@ -24,6 +24,7 @@
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/GridHandle.h>
 #include <nanovdb/util/SampleFromVoxels.h>
+#include <cmath>
 #include <string>
 #include "pbrt/util/check.h"
 #include "pbrt/util/log.h"
@@ -137,6 +138,9 @@ class HomogeneousMajorantIterator {
 
     PBRT_CPU_GPU
     void Advance() { called = true; }
+
+    PBRT_CPU_GPU
+    bool valid() { return true; }
 
     std::string ToString() const;
 
@@ -266,6 +270,9 @@ class DDAMajorantIterator {
             tMin = tMax;
         nextCrossingT[stepAxis] += deltaT[stepAxis];
     }
+
+    PBRT_CPU_GPU
+    bool valid() { return !std::isinf(tMin); }
 
     std::string ToString() const;
     void SetTmin(Float tmin) { tMin = tmin; }
@@ -1046,13 +1053,14 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
 #else
 PBRT_CPU_GPU
 template <typename ConcreteMedium>
-void update_tmin(typename ConcreteMedium::MajorantIterator iter, ConcreteMedium *medium,
+void update_tmin(typename ConcreteMedium::MajorantIterator &iter, ConcreteMedium *medium,
                  Ray &ray, Float t_val) {
     Ray it_ray = iter.ray();
     auto pt = ray(t_val);
     pt = medium->renderFromMedium().ApplyInverse(pt);
     Float t = Dot(it_ray.d, (pt - it_ray.o)) / Dot(it_ray.d, it_ray.d);
     iter.SetTmin(t);
+    iter.Advance();
 }
 
 template <typename ConcreteMedium, typename F>
@@ -1067,18 +1075,33 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     std::vector<typename ConcreteMedium::MajorantIterator> iter;
     std::vector<Float> densities;
     SampledSpectrum sigma_t(0.0);
+    SampledSpectrum T_maj(1.f);
 
     Float density_probability = 1.0 / (float(ray.medium.count()));
     for (int i = 0; i < ray.medium.count(); ++i) {
         medium.push_back(ray.medium[i].Cast<ConcreteMedium>());
         densities.push_back(density_probability);
-        iter.push_back(medium[i]->SampleRay(ray, tMax, lambda, true));
-        sigma_t += iter[i].sigma_t();
+        iter.push_back(medium.back()->SampleRay(ray, tMax, lambda, true));
+        if (!iter.back().valid()) {
+            iter.pop_back();
+            densities.pop_back();
+            medium.pop_back();
+        } else {
+            sigma_t += iter.back().sigma_t();
+        }
     }
+
+    if (medium.size() == 0) {
+        return T_maj;
+    }
+
+    // If we deleted an item above, recompute the densities
+    Float sum = std::accumulate(densities.begin(), densities.end(), 0.0);
+    std::transform(densities.begin(), densities.end(), densities.begin(),
+                   [sum](Float val) { return val / sum; });
 
     pstd::span<Float> dens_prob(densities);
     // Generate ray majorant samples until termination
-    SampledSpectrum T_maj(1.f);
     bool done = false;
     int med_idx = 0;
     RNG rng2(rng);
@@ -1091,18 +1114,18 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
             // Remove this medium and continue processing until there are no more active
             // mediums
             sigma_t -= iter[med_idx].sigma_t();
-            medium.erase(medium.begin()+med_idx);
+            medium.erase(medium.begin() + med_idx);
             // Short-circuit exit
             if (medium.size() == 0) {
                 return T_maj;
             }
-            densities.erase(densities.begin()+med_idx);
+            densities.erase(densities.begin() + med_idx);
             Float sum = std::accumulate(densities.begin(), densities.end(), 0.0);
             std::transform(densities.begin(), densities.end(), densities.begin(),
-                       [sum](Float val) { return val / sum; });
+                           [sum](Float val) { return val / sum; });
             dens_prob = pstd::span<Float>(densities);
 
-            iter.erase(iter.begin()+med_idx);
+            iter.erase(iter.begin() + med_idx);
             continue;
         }
         // Handle zero-valued majorant for current segment
