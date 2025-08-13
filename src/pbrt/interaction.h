@@ -118,10 +118,9 @@ class Interaction {
     MediaTracker GetMedium(Vector3f w) const {
         if (mediumInterface) {
             if (Dot(w, n) > 0) {
-                // Transitioning out of current volume
-                if (medium.back() != 0) {
-                    if (medium.back() == mediumInterface->inside)
-                        medium.pop_back();
+                // Transitioning out of a volume
+                if (medium.valid()) {
+                    medium.remove(mediumInterface->inside);
                 }
                 medium.push_back(mediumInterface->outside);
             } else {

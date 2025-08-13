@@ -3,6 +3,7 @@
 
 #include "pbrt/base/medium.h"
 #include "pbrt/util/error.h"
+#include "pbrt/util/log.h"
 #include "pbrt/util/pstd.h"
 
 namespace pbrt {
@@ -32,6 +33,7 @@ class MediaTracker {
             if (_index + 1 > NNestedVolumes) {
                 Warning("Pushed Volumes, %d, exceeds maximum allowed, %d\n", _index,
                         NNestedVolumes);
+                LOG_FATAL("Pushed Volumes");
                 _mediums[_index] = medium;
             } else
                 _mediums[_index++] = medium;
@@ -42,6 +44,33 @@ class MediaTracker {
     void pop_back() {
         DCHECK(_index > 0);
         _mediums[--_index] = 0;
+    }
+
+    PBRT_CPU_GPU
+    void remove(Medium medium) {
+        DCHECK(_index > 0);
+        int index = -1;
+        for(int i = 0; i < _index; i++) {
+            if (_mediums[i] == medium) {
+                index = i;
+                break;
+            }
+        }
+
+        // This can potentially occur if there's an event close to the interface that
+        // causes the ray to enter the volume, but the origin and hit point were within
+        // error bounds causing the hit to be rejected
+        if (index == -1) {
+            LOG_VERBOSE("Unable to find requested medium in list");
+        }
+        else {
+            while(index < _index-1) {
+                _mediums[index] = _mediums[index+1];
+                index++;
+            }
+            _mediums[index] = 0;
+            _index--;
+        }
     }
 
     PBRT_CPU_GPU
