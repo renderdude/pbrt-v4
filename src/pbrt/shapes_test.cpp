@@ -7,6 +7,7 @@
 #include <pbrt/pbrt.h>
 
 #include <pbrt/interaction.h>
+#include <pbrt/media.h>
 #include <pbrt/shapes.h>
 #include <pbrt/util/lowdiscrepancy.h>
 #include <pbrt/util/memory.h>
