@@ -28,6 +28,7 @@
 #include <string>
 #include "pbrt/util/check.h"
 #include "pbrt/util/log.h"
+#include "pbrt/util/vecmath.h"
 #if defined(PBRT_BUILD_GPU_RENDERER) && defined(__NVCC__)
 #include <nanovdb/util/CudaDeviceBuffer.h>
 #endif  // PBRT_BUILD_GPU_RENDERER
@@ -480,6 +481,9 @@ class HomogeneousMedium {
     PBRT_CPU_GPU
     Transform renderFromMedium() { return Transform(); }
 
+    PBRT_CPU_GPU
+    bool inside(Point3f pt) const {return true;}
+
   private:
     // HomogeneousMedium Private Data
     DenselySampledSpectrum sigma_a_spec, sigma_s_spec, Le_spec;
@@ -567,6 +571,12 @@ class GridMedium {
     PBRT_CPU_GPU
     Transform renderFromMedium() { return _renderFromMedium; }
 
+    PBRT_CPU_GPU
+    bool inside(Point3f pt) const {
+        pt = _renderFromMedium.ApplyInverse(pt);
+        return Inside(pt, bounds);
+    }
+
   private:
     // GridMedium Private Members
     Bounds3f bounds;
@@ -651,6 +661,9 @@ class RGBGridMedium {
     PBRT_CPU_GPU
     Transform renderFromMedium() { return _renderFromMedium; }
 
+    PBRT_CPU_GPU
+    bool inside(Point3f pt) const {return true;}
+
   private:
     // RGBGridMedium Private Members
     Bounds3f bounds;
@@ -727,6 +740,9 @@ class CloudMedium {
 
     PBRT_CPU_GPU
     Transform renderFromMedium() { return _renderFromMedium; }
+
+    PBRT_CPU_GPU
+    bool inside(Point3f pt) const {return true;}
 
   private:
     // CloudMedium Private Methods
@@ -895,6 +911,9 @@ class NanoVDBMedium {
 
     PBRT_CPU_GPU
     Transform renderFromMedium() { return _renderFromMedium; }
+
+    PBRT_CPU_GPU
+    bool inside(Point3f pt) const {return true;}
 
   private:
     // NanoVDBMedium Private Methods

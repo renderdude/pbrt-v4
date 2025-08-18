@@ -97,48 +97,49 @@ class Interaction {
 
     PBRT_CPU_GPU
     RayDifferential SpawnRay(Vector3f d) const {
-        return RayDifferential(OffsetRayOrigin(d), d, GetMedium(d), time);
+        Point3f pt = OffsetRayOrigin(d);
+        return RayDifferential(pt, d, GetMedium(d, pt), time);
     }
 
     PBRT_CPU_GPU
     Ray SpawnRayTo(Point3f p2) const {
         Ray r = pbrt::SpawnRayTo(pi, n, time, p2);
-        r.medium = GetMedium(r.d);
+        r.medium = GetMedium(r.d, r.o);
         return r;
     }
 
     PBRT_CPU_GPU
     Ray SpawnRayTo(const Interaction &it) const {
         Ray r = pbrt::SpawnRayTo(pi, n, time, it.pi, it.n);
-        r.medium = GetMedium(r.d);
+        r.medium = GetMedium(r.d, r.o);
         return r;
     }
 
     PBRT_CPU_GPU
-    MediaTracker GetMedium(Vector3f w) const {
+    MediaTracker GetMedium(Vector3f w, Point3f pt) const {
         if (mediumInterface) {
             if (Dot(w, n) > 0) {
                 // Transitioning out of a volume
                 if (medium.valid()) {
                     medium.remove(mediumInterface->inside);
                 }
-                medium.push_back(mediumInterface->outside);
+                medium.push_back(mediumInterface->outside, pt);
             } else {
                 // Transitioning into new volume, but first check if it's the same volume
                 // This can occur if the medium interface has a reflective material
                 if (medium.back() != mediumInterface->inside) {
-                    medium.push_back(mediumInterface->inside);
+                    medium.push_back(mediumInterface->inside, pt);
                 }
             }
         }
         return medium;
     }
-
+    
     PBRT_CPU_GPU
     MediaTracker GetMedium() const {
         if (mediumInterface) {
             DCHECK_EQ(mediumInterface->inside, mediumInterface->outside);
-            medium.push_back(mediumInterface->inside);
+            medium.push_back(mediumInterface->inside, (Point3f)pi);
         }
         return medium;
     }

@@ -2,6 +2,7 @@
 #define PBRT_UTIL_MEDIATRACKER_H
 
 #include "pbrt/base/medium.h"
+#include "pbrt/pbrt.h"
 #include "pbrt/util/error.h"
 #include "pbrt/util/log.h"
 #include "pbrt/util/pstd.h"
@@ -27,14 +28,26 @@ class MediaTracker {
     Medium get(int index = 0) const { return _mediums[index]; }
 
     PBRT_CPU_GPU
-    void push_back(Medium medium) {
+    void push_back(Medium medium, Point3f pt) {
         // Only add non-empty volumes
         if (medium != nullptr) {
             if (_index + 1 > NNestedVolumes) {
-                Warning("Pushed Volumes, %d, exceeds maximum allowed, %d\n", _index,
-                        NNestedVolumes);
-                LOG_FATAL("Pushed Volumes");
-                _mediums[_index] = medium;
+                bool all_inside = true;
+                for (int i = _index-1; i >= 0; i--) {
+                    if (!_mediums[i].inside(pt)) {
+                        all_inside = false;
+                        remove(_mediums[i]);
+                    }
+                }
+                if (all_inside) {
+                    Warning("Pushed Volumes, %d, exceeds maximum allowed, %d\n", _index,
+                            NNestedVolumes);
+                    //LOG_FATAL("Pushed Volumes");
+                    _mediums[_index] = medium;
+                }
+                else {
+                    _mediums[_index++] = medium;
+                }
             } else
                 _mediums[_index++] = medium;
         }
