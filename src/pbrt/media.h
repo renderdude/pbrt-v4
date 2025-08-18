@@ -230,6 +230,16 @@ class DDAMajorantIterator {
                 voxelLimit[axis] = -1;
             }
         }
+
+        // Initialize tVoxelExit. Under multi-volume traversals, we 
+        // can call Advance on a 2nd volume before we call Next (which was called)
+        // on the volume segment we're traversing.
+        int bits = ((nextCrossingT[0] < nextCrossingT[1]) << 2) +
+                   ((nextCrossingT[0] < nextCrossingT[2]) << 1) +
+                   ((nextCrossingT[1] < nextCrossingT[2]));
+        const int cmpToAxis[8] = {2, 1, 2, 1, 2, 2, 0, 0};
+        int stepAxis = cmpToAxis[bits];
+        tVoxelExit = std::min(tMax, nextCrossingT[stepAxis]);
     }
 
     PBRT_CPU_GPU
