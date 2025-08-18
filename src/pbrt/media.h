@@ -942,6 +942,16 @@ inline MediumProperties Medium::SamplePoint(Point3f p,
     return Dispatch(sample);
 }
 
+inline Transform Medium::renderFromMedium() {
+    auto rfm = [&](auto ptr) { return ptr->renderFromMedium(); };
+    return Dispatch(rfm);
+}
+
+inline bool Medium::inside(Point3f p) const {
+    auto pt_inside = [&](auto ptr) { return ptr->inside(p); };
+    return Dispatch(pt_inside);
+}
+
 // Medium Sampling Function Definitions
 inline RayMajorantIterator Medium::SampleRay(Ray ray, Float tMax,
                                              const SampledWavelengths &lambda,

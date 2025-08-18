@@ -17,6 +17,8 @@
 
 namespace pbrt {
 
+class Transform;
+
 // PhaseFunctionSample Definition
 struct PhaseFunctionSample {
     Float p;
@@ -98,6 +100,12 @@ class Medium
     // Medium Public Methods
     RayMajorantIterator SampleRay(Ray ray, Float tMax, const SampledWavelengths &lambda,
                                   ScratchBuffer &buf) const;
+
+    PBRT_CPU_GPU
+    Transform renderFromMedium();
+
+    PBRT_CPU_GPU
+    bool inside(Point3f pt) const;
 };
 
 // MediumInterface Definition
