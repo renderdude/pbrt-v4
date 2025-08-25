@@ -1116,17 +1116,15 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     SampledSpectrum sigma_t(0.0);
     SampledSpectrum T_maj(1.f);
 
-    Float density_probability = 1.0 / (float(ray.medium.count()));
     for (int i = 0; i < ray.medium.count(); ++i) {
         medium.push_back(ray.medium[i].Cast<ConcreteMedium>());
-        densities.push_back(density_probability);
         iter.push_back(medium.back()->SampleRay(ray, tMax, lambda, true));
         if (!iter.back().valid()) {
             iter.pop_back();
-            densities.pop_back();
             medium.pop_back();
         } else {
             sigma_t += iter.back().sigma_t();
+            densities.push_back(iter.back().sigma_t().y(lambda));
         }
     }
 
