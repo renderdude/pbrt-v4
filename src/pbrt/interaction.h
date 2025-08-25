@@ -127,7 +127,7 @@ class Interaction {
             } else {
                 // Transitioning into new volume, but first check if it's the same volume
                 // This can occur if the medium interface has a reflective material
-                if (medium.back() != mediumInterface->inside) {
+                if (!medium.has(mediumInterface->inside)){
                     medium.push_back(mediumInterface->inside, pt);
                 }
             }

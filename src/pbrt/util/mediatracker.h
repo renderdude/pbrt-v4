@@ -28,6 +28,16 @@ class MediaTracker {
     Medium get(int index = 0) const { return _mediums[index]; }
 
     PBRT_CPU_GPU
+    bool has(Medium medium) const {
+        for (int i = 0; i < _index; i++) {
+            if (_mediums[i] == medium) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    PBRT_CPU_GPU
     void push_back(Medium medium, Point3f pt) {
         // Only add non-empty volumes
         if (medium != nullptr) {
