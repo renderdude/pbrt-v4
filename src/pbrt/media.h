@@ -141,6 +141,9 @@ class HomogeneousMajorantIterator {
     void Advance() { called = true; }
 
     PBRT_CPU_GPU
+    void Advance(Float t) {}
+
+    PBRT_CPU_GPU
     bool valid() { return true; }
 
     std::string ToString() const;
@@ -148,7 +151,9 @@ class HomogeneousMajorantIterator {
     // Dummy routines to make compiler happy. May need something real in future
     SampledSpectrum sigma_t() { return SampledSpectrum(1.0); }
     Ray ray() { return Ray(); }
-    void SetTmin(Float tmin) {}
+    bool SetTmin(Float tmin) { return true; }
+    Float GetTmin() { return seg.tMin; }
+    Float Min_Step() const { return 1; }
 
   private:
     RayMajorantSegment seg;
@@ -283,12 +288,52 @@ class DDAMajorantIterator {
     }
 
     PBRT_CPU_GPU
+    void Advance(Float t) {
+        while (t > tVoxelExit && t < tMax) {
+            int bits = ((nextCrossingT[0] < nextCrossingT[1]) << 2) +
+                       ((nextCrossingT[0] < nextCrossingT[2]) << 1) +
+                       ((nextCrossingT[1] < nextCrossingT[2]));
+            const int cmpToAxis[8] = {2, 1, 2, 1, 2, 2, 0, 0};
+            int stepAxis = cmpToAxis[bits];
+
+            // Advance to next voxel in maximum density grid
+            tMin = tVoxelExit;
+            if (nextCrossingT[stepAxis] > tMax)
+                tMin = tMax;
+            voxel[stepAxis] += step[stepAxis];
+            if (voxel[stepAxis] == voxelLimit[stepAxis])
+                tMin = tMax;
+            nextCrossingT[stepAxis] += deltaT[stepAxis];
+
+            // Recompute bits as the axis may have switched
+            bits = ((nextCrossingT[0] < nextCrossingT[1]) << 2) +
+                   ((nextCrossingT[0] < nextCrossingT[2]) << 1) +
+                   ((nextCrossingT[1] < nextCrossingT[2]));
+            stepAxis = cmpToAxis[bits];
+            tVoxelExit = std::min(tMax, nextCrossingT[stepAxis]);
+        }
+        if (t > tMin) tMin = t;
+    }
+
+    PBRT_CPU_GPU
     bool valid() { return !std::isinf(tMin); }
 
     std::string ToString() const;
-    void SetTmin(Float tmin) { tMin = tmin; }
+    bool SetTmin(Float tmin) {
+        bool result = false;
+        if (tmin >= tMin) {
+            tMin = tmin;
+            result = (tMin < tVoxelExit) ? false : true;
+        }
+        return result;
+    }
+    Float GetTmin() { return tMin; }
+
     Ray &ray() { return _ray; }
     SampledSpectrum &sigma_t() { return _sigma_t; }
+
+    Float Min_Step() const { return std::min(std::min(deltaT[0], deltaT[1]),
+                                             std::min(deltaT[1], deltaT[2])); }
 
   private:
     // DDAMajorantIterator Private Members
@@ -1093,13 +1138,11 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
 PBRT_CPU_GPU
 template <typename ConcreteMedium>
 void update_tmin(typename ConcreteMedium::MajorantIterator &iter, ConcreteMedium *medium,
-                 Ray &ray, Float t_val) {
+                 Point3f pt) {
     Ray it_ray = iter.ray();
-    auto pt = ray(t_val);
     pt = medium->renderFromMedium().ApplyInverse(pt);
     Float t = Dot(it_ray.d, (pt - it_ray.o)) / Dot(it_ray.d, it_ray.d);
-    iter.SetTmin(t);
-    iter.Advance();
+    iter.Advance(t);
 }
 
 template <typename ConcreteMedium, typename F>
@@ -1115,6 +1158,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     std::vector<Float> densities;
     SampledSpectrum sigma_t(0.0);
     SampledSpectrum T_maj(1.f);
+    std::vector<Float> min_step;
 
     for (int i = 0; i < ray.medium.count(); ++i) {
         medium.push_back(ray.medium[i].Cast<ConcreteMedium>());
@@ -1124,7 +1168,9 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
             medium.pop_back();
         } else {
             sigma_t += iter.back().sigma_t();
-            densities.push_back(iter.back().sigma_t().y(lambda));
+            densities.push_back(iter.back().sigma_t().Average());
+            //densities.push_back(iter.back().sigma_t().y(lambda));
+            min_step.push_back(iter.back().Min_Step());
         }
     }
 
@@ -1132,64 +1178,86 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
         return T_maj;
     }
 
-    // If we deleted an item above, recompute the densities
+    // Compute the density probability
     Float sum = std::accumulate(densities.begin(), densities.end(), 0.0);
     std::transform(densities.begin(), densities.end(), densities.begin(),
                    [sum](Float val) { return val / sum; });
 
     pstd::span<Float> dens_prob(densities);
+
+    // Find volume with smallest step size
+    int min_idx = 0;
+    auto min_it = std::min_element(min_step.begin(), min_step.end());
+    min_idx = std::distance(min_step.begin(), min_it);
+
     // Generate ray majorant samples until termination
     bool done = false;
     int med_idx = 0;
     RNG rng2(rng);
-    while (!done) {
-        Float um = rng2.Uniform<Float>();
-        med_idx = SampleDiscrete(dens_prob, um);
-        // Get next majorant segment from iterator and sample it
-        pstd::optional<RayMajorantSegment> seg = iter[med_idx].Next();
-        if (!seg) {
+    auto remove_media = [&](int idx) {
             // Remove this medium and continue processing until there are no more active
             // mediums
-            sigma_t -= iter[med_idx].sigma_t();
-            medium.erase(medium.begin() + med_idx);
-            // Short-circuit exit
-            if (medium.size() == 0) {
-                return T_maj;
-            }
-            densities.erase(densities.begin() + med_idx);
+            sigma_t -= iter[idx].sigma_t();
+            medium.erase(medium.begin() + idx);
+            densities.erase(densities.begin() + idx);
             Float sum = std::accumulate(densities.begin(), densities.end(), 0.0);
             std::transform(densities.begin(), densities.end(), densities.begin(),
                            [sum](Float val) { return val / sum; });
             dens_prob = pstd::span<Float>(densities);
 
-            iter.erase(iter.begin() + med_idx);
+            min_step.erase(min_step.begin() + idx);
+            auto min_it = std::min_element(min_step.begin(), min_step.end());
+            min_idx = std::distance(min_step.begin(), min_it);
+
+            iter.erase(iter.begin() + idx);
+    };
+
+    while (!done) {
+        Float um = rng2.Uniform<Float>();
+        med_idx = SampleDiscrete(dens_prob, um);
+        // Get next majorant segment from iterator and sample it
+        pstd::optional<RayMajorantSegment> sample_seg = iter[med_idx].Next();
+        pstd::optional<RayMajorantSegment> step_seg = iter[min_idx].Next();
+        if (!step_seg) {
+            remove_media(min_idx);
+            if (medium.size() == 0) {
+                return T_maj;
+            }
+            continue;
+        }
+        if (!sample_seg) {
+            remove_media(med_idx);
+            if (medium.size() == 0) {
+                return T_maj;
+            }
             continue;
         }
         // Handle zero-valued majorant for current segment
-        SampledSpectrum orig_sigma_maj = iter[med_idx].sigma_t() * seg->sigma_maj;
-        seg->sigma_maj = sigma_t * seg->sigma_maj;
-        if (seg->sigma_maj[0] == 0) {
-            Float dt = seg->tMax - seg->tMin;
+        SampledSpectrum orig_sigma_maj = iter[med_idx].sigma_t() * sample_seg->sigma_maj;
+        sample_seg->sigma_maj = sigma_t * sample_seg->sigma_maj;
+        step_seg->sigma_maj = sigma_t * step_seg->sigma_maj;
+        if (step_seg->sigma_maj[0] == 0) {
+            Float dt = step_seg->tMax - step_seg->tMin;
             // Handle infinite _dt_ for ray majorant segment
             if (IsInf(dt))
                 dt = std::numeric_limits<Float>::max();
 
-            T_maj *= FastExp(-dt * seg->sigma_maj);
+            T_maj *= FastExp(-dt * sample_seg->sigma_maj);
             continue;
         }
 
         // Generate samples along current majorant segment
-        Float tMin = seg->tMin;
+        Float tMin = step_seg->tMin;
         while (true) {
             // Try to generate sample along current majorant segment
-            Float t = tMin + SampleExponential(u, seg->sigma_maj[0]);
+            Float t = tMin + SampleExponential(u, sample_seg->sigma_maj[0]);
             PBRT_DBG("Sampled t = %f from tMin %f u %f sigma_maj[0] %f\n", t, tMin, u,
-                     seg->sigma_maj[0]);
+                     sample_seg->sigma_maj[0]);
             u = rng.Uniform<Float>();
-            if (t < seg->tMax) {
+            if (t < step_seg->tMax) {
                 // Call callback function for sample within segment
                 PBRT_DBG("t < seg->tMax\n");
-                T_maj *= FastExp(-(t - tMin) * seg->sigma_maj);
+                T_maj *= FastExp(-(t - tMin) * sample_seg->sigma_maj);
                 MediumProperties mp = medium[med_idx]->SamplePoint(ray(t), lambda);
                 if (!callback(ray(t), mp, orig_sigma_maj, T_maj)) {
                     // Returning out of doubly-nested while loop is not as good perf. wise
@@ -1202,24 +1270,23 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
 
             } else {
                 // Handle sample past end of majorant segment
-                Float dt = seg->tMax - tMin;
+                Float dt = step_seg->tMax - tMin;
                 // Handle infinite _dt_ for ray majorant segment
                 if (IsInf(dt))
                     dt = std::numeric_limits<Float>::max();
 
-                T_maj *= FastExp(-dt * seg->sigma_maj);
+                T_maj *= FastExp(-dt * sample_seg->sigma_maj);
                 PBRT_DBG("Past end, added dt %f * maj[0] %f\n", dt, seg->sigma_maj[0]);
                 break;
             }
         }
 
-        iter[med_idx].Advance();
+        iter[min_idx].Advance();
         for (int i = 0; i < medium.size(); ++i) {
-            if (i != med_idx) {
-                auto pt = iter[i].ray()(seg->tMin);
-                pt = medium[i]->renderFromMedium()(pt);
-                Float t = Dot(ray.d, (pt - ray.o)) / Dot(ray.d, ray.d);
-                update_tmin(iter[i], medium[i], ray, t);
+            if (i != min_idx) {
+                auto pt = iter[min_idx].ray()(iter[min_idx].GetTmin());
+                pt = medium[min_idx]->renderFromMedium()(pt);
+                update_tmin(iter[i], medium[i], pt);
             }
         }
     }
