@@ -126,15 +126,19 @@ class HomogeneousMajorantIterator {
     PBRT_CPU_GPU
     HomogeneousMajorantIterator() : called(true) {}
     PBRT_CPU_GPU
-    HomogeneousMajorantIterator(Float tMin, Float tMax, SampledSpectrum sigma_maj,
-                                bool use_unity_for_sigma_t = false)
-        : seg{tMin, tMax, sigma_maj}, called(false) {}
+    HomogeneousMajorantIterator(Float tMin, Float tMax, SampledSpectrum sigma_t, 
+        bool use_unity_for_sigma_t = false)
+        : _tMin(tMin), _tMax(tMax), called(false), 
+        _sigma_t(sigma_t), use_unity_for_sigma_t(use_unity_for_sigma_t) {}
 
     PBRT_CPU_GPU
     pstd::optional<RayMajorantSegment> Next() {
         if (called)
             return {};
-        return seg;
+        SampledSpectrum sigma_maj =
+            (use_unity_for_sigma_t ? SampledSpectrum(1.0) : _sigma_t);
+        RayMajorantSegment seg_t{_tMin, _tMax, sigma_maj};
+        return seg_t;
     }
 
     PBRT_CPU_GPU
@@ -148,16 +152,19 @@ class HomogeneousMajorantIterator {
 
     std::string ToString() const;
 
+    SampledSpectrum &sigma_t() { return _sigma_t; }
+    Float GetTmin() { return _tMin; }
+
     // Dummy routines to make compiler happy. May need something real in future
-    SampledSpectrum sigma_t() { return SampledSpectrum(1.0); }
     Ray ray() { return Ray(); }
     bool SetTmin(Float tmin) { return true; }
-    Float GetTmin() { return seg.tMin; }
     Float Min_Step() const { return 1; }
 
   private:
-    RayMajorantSegment seg;
+    Float _tMin, _tMax;
     bool called;
+    SampledSpectrum _sigma_t;
+    bool use_unity_for_sigma_t;
 };
 
 // MajorantGrid Definition
@@ -1243,6 +1250,17 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
                 dt = std::numeric_limits<Float>::max();
 
             T_maj *= FastExp(-dt * sample_seg->sigma_maj);
+
+            // Manually advance the iterators. In unmodified PBRT this would be handled
+            // by the call to Next
+            iter[min_idx].Advance();
+            for (int i = 0; i < medium.size(); ++i) {
+                if (i != min_idx) {
+                    auto pt = iter[min_idx].ray()(iter[min_idx].GetTmin());
+                    pt = medium[min_idx]->renderFromMedium()(pt);
+                    update_tmin(iter[i], medium[i], pt);
+                }
+            }
             continue;
         }
 

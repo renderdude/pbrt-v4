@@ -52,7 +52,7 @@ class MediaTracker {
                 if (all_inside) {
                     Warning("Pushed Volumes, %d, exceeds maximum allowed, %d\n", _index,
                             NNestedVolumes);
-                    //LOG_FATAL("Pushed Volumes");
+                    LOG_FATAL("Pushed Volumes");
                     _mediums[_index] = medium;
                 }
                 else {

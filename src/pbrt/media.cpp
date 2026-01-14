@@ -63,7 +63,7 @@ std::string RayMajorantIterator::ToString() const {
 }
 
 std::string HomogeneousMajorantIterator::ToString() const {
-    return StringPrintf("[ HomogeneousMajorantIterator seg: %s called: %s ]", seg,
+    return StringPrintf("[ HomogeneousMajorantIterator tMin: %f tMax: %f sigma_maj: %s called: %s ]", _tMin, _tMax, _sigma_t,
                         called);
 }
 
