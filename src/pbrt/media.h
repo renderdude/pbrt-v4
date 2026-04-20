@@ -1168,6 +1168,17 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
                 dt = std::numeric_limits<Float>::max();
 
             T_maj *= FastExp(-dt * sample_seg->sigma_maj);
+            // Must advance the step iterator and sync all others before continuing;
+            // without this, iter[min_idx].Next() returns the same zero-density voxel
+            // on every outer-loop iteration, causing an infinite loop.
+            iter[min_idx].Advance();
+            for (int i = 0; i < n; ++i) {
+                if (i != min_idx) {
+                    auto pt = iter[min_idx].ray()(iter[min_idx].GetTmin());
+                    pt = medium[min_idx]->renderFromMedium()(pt);
+                    update_tmin(iter[i], medium[i], pt);
+                }
+            }
             continue;
         }
 
