@@ -76,19 +76,30 @@ static void updateDynamicItems() {
     while (!exitThread) {
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
-        while (!dynamicItems.empty()) {
-            export_raytree(dynamicItems.front());
-            std::lock_guard<std::mutex> lock(mutex);
-            dynamicItems.pop();
+        while (true) {
+            Photon_Tile tile;
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (dynamicItems.empty())
+                    break;
+                tile = std::move(dynamicItems.front());
+                dynamicItems.pop();
+            }
+            export_raytree(tile);
         }
     }
 
     // One last time to get the last bits
-    std::lock_guard<std::mutex> lock(mutex);
-    while (!dynamicItems.empty()) {
-        export_raytree(dynamicItems.front());
-        std::lock_guard<std::mutex> lock(mutex);
-        dynamicItems.pop();
+    while (true) {
+        Photon_Tile tile;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (dynamicItems.empty())
+                break;
+            tile = std::move(dynamicItems.front());
+            dynamicItems.pop();
+        }
+        export_raytree(tile);
     }
 }
 
