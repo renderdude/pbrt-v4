@@ -240,7 +240,7 @@ pstd::optional<PhaseFunctionSample> TabulatedPhaseFunction::Sample_p(Vector3f wo
 #endif
 
 std::string TabulatedPhaseFunction::ToString() const {
-    return StringPrintf("[ TabulatedPhaseFunction g: %f ]", g);
+    return StringPrintf("[ TabulatedPhaseFunction ]");
 }
 
 struct MeasuredSS {
