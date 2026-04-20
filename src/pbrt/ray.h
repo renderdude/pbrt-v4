@@ -19,8 +19,10 @@
 
 namespace pbrt {
 
-using Segment = struct
-{
+// Named structs (not anonymous aliases) so GCC mangles the types
+// consistently across translation units — required for correct linkage
+// of ExportTile() and to suppress -Wsubobject-linkage warnings.
+struct Segment {
     char status;
     Point3f start_pt, end_pt;
 };
@@ -28,8 +30,8 @@ using Segment = struct
 using Segment_List = std::vector<Segment>;
 using Segments = std::vector<Segment_List>;
 using Segment_Map = std::map<char, Segments>;
-using Photon_Path = struct
-{
+
+struct Photon_Path {
     Point2i pixel;
     Segment_Map segments;
 };
