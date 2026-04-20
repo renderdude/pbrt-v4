@@ -49,7 +49,7 @@ template <>
 struct SOA<MediaTracker> {
     SOA() = default;
     SOA(int size, Allocator alloc) {
-        nAlloc = size * NSpectrumSamples;
+        nAlloc = size * NNestedVolumes;
         ptr1 = alloc.allocate_object<Medium>(nAlloc);
     }
     SOA &operator=(const SOA &s) {
@@ -60,9 +60,9 @@ struct SOA<MediaTracker> {
     PBRT_CPU_GPU
     MediaTracker operator[](int i) const {
         MediaTracker s;
-        int offset = i * NSpectrumSamples;
+        int offset = i * NNestedVolumes;
         DCHECK_LT(offset, nAlloc);
-        for (int i = 0; i < NSpectrumSamples; ++i)
+        for (int i = 0; i < NNestedVolumes; ++i)
             s[i] = ptr1[offset + i];
         return s;
     }
@@ -74,9 +74,9 @@ struct SOA<MediaTracker> {
         }
         PBRT_CPU_GPU
         void operator=(const MediaTracker &s) {
-            int offset = index * NSpectrumSamples;
+            int offset = index * NNestedVolumes;
             DCHECK_LT(offset, soa->nAlloc);
-            for (int i = 0; i < NSpectrumSamples; ++i)
+            for (int i = 0; i < NNestedVolumes; ++i)
                 soa->ptr1[offset + i] = s[i];
         }
 
