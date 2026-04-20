@@ -50,10 +50,10 @@ class MediaTracker {
                     }
                 }
                 if (all_inside) {
-                    Warning("Pushed Volumes, %d, exceeds maximum allowed, %d\n", _index,
-                            NNestedVolumes);
-                    //LOG_FATAL("Pushed Volumes");
-                    _mediums[_index] = medium;
+                    // All existing mediums are still active; no room for the new one.
+                    // Discard it and warn — writing past the array end would be UB.
+                    Warning("Pushed Volumes, %d, exceeds maximum allowed, %d; "
+                            "new medium discarded\n", _index, NNestedVolumes);
                 }
                 else {
                     _mediums[_index++] = medium;
