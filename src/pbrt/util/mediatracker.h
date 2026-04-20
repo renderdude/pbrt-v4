@@ -9,7 +9,7 @@
 
 namespace pbrt {
 
-static constexpr int NNestedVolumes = 2;
+static constexpr int NNestedVolumes = 3;
 
 class MediaTracker {
   public:
