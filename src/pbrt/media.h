@@ -1057,6 +1057,21 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
                                          const SampledWavelengths &lambda, F callback) {
     auto sample = [&](auto medium) {
         using M = typename std::remove_reference_t<decltype(*medium)>;
+        // Overlapping volumes of mixed types cannot share a MajorantIterator.
+        // Non-overlapping mixed types (different volumes, never active at the
+        // same time) are fine — this check only fires when count() > 1, i.e.,
+        // two or more media are simultaneously active on this ray.
+        if (ray.medium.count() > 1) {
+            for (int i = 0; i < ray.medium.count(); ++i) {
+                if (!ray.medium[i].Is<M>())
+                    LOG_FATAL("Mixed-type overlapping volumes are not supported. "
+                              "Ray has %d simultaneously active media but entry %d "
+                              "does not match the dispatched type. All overlapping "
+                              "volumes must use the same medium type (e.g. all "
+                              "\"homogeneous\" or all \"uniformgrid\").",
+                              ray.medium.count(), i);
+            }
+        }
         return SampleT_maj<M>(ray, tMax, u, rng, lambda, callback);
     };
     return ray.medium.back().Dispatch(sample);
