@@ -103,7 +103,6 @@ class TabulatedPhaseFunction {
 
   private:
     // TabulatedPhaseFunction Private Members
-    Float g;
     Float _total_area = 0;
     std::vector<Float> _lambdas;
     // Indexed by cos(angle)
