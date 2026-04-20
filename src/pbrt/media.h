@@ -1063,89 +1063,6 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     return ray.medium.back().Dispatch(sample);
 }
 
-#if 0
-template <typename ConcreteMedium, typename F>
-PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
-                                         const SampledWavelengths &lambda, F callback) {
-    // Normalize ray direction and update _tMax_ accordingly
-    tMax *= Length(ray.d);
-    ray.d = Normalize(ray.d);
-
-    // Initialize _MajorantIterator_ for ray majorant sampling
-    pstd::vector<ConcreteMedium *> medium;
-    pstd::vector<typename ConcreteMedium::MajorantIterator> iter;
-    pstd::vector<Float> densities;
-    Float density_probability = 1.0 / (float(ray.medium.count()));
-    for (int i = 0; i < ray.medium.count(); ++i) {
-        medium.push_back(ray.medium[i].Cast<ConcreteMedium>());
-        densities.push_back(density_probability);
-        iter.push_back(medium[i]->SampleRay(ray, tMax, lambda));
-    }
-    MultiVolumeMajorantIterator<ConcreteMedium> mv_iter(ray, medium, tMax, lambda);
-
-    pstd::span<Float> dens_prob(densities);
-    // Generate ray majorant samples until termination
-    SampledSpectrum T_maj(1.f);
-    bool done = false;
-    int med_idx = ray.medium.count() - 1;
-    while (!done) {
-        Float um = rng.Uniform<Float>();
-        med_idx = SampleDiscrete(dens_prob, um);
-        // Get next majorant segment from iterator and sample it
-        pstd::optional<RayMajorantSegment> seg = iter[med_idx].Next();
-        if (!seg)
-            return T_maj;
-        // Handle zero-valued majorant for current segment
-        if (seg->sigma_maj[0] == 0) {
-            Float dt = seg->tMax - seg->tMin;
-            // Handle infinite _dt_ for ray majorant segment
-            if (IsInf(dt))
-                dt = std::numeric_limits<Float>::max();
-
-            T_maj *= FastExp(-dt * seg->sigma_maj);
-            continue;
-        }
-
-        // Generate samples along current majorant segment
-        Float tMin = seg->tMin;
-        while (true) {
-            // Try to generate sample along current majorant segment
-            Float t = tMin + SampleExponential(u, seg->sigma_maj[0]);
-            PBRT_DBG("Sampled t = %f from tMin %f u %f sigma_maj[0] %f\n", t, tMin, u,
-                     seg->sigma_maj[0]);
-            u = rng.Uniform<Float>();
-            if (t < seg->tMax) {
-                // Call callback function for sample within segment
-                PBRT_DBG("t < seg->tMax\n");
-                T_maj *= FastExp(-(t - tMin) * seg->sigma_maj);
-                MediumProperties mp = medium[med_idx]->SamplePoint(ray(t), lambda);
-                if (!callback(ray(t), mp, seg->sigma_maj, T_maj)) {
-                    // Returning out of doubly-nested while loop is not as good perf. wise
-                    // on the GPU vs using "done" here.
-                    done = true;
-                    break;
-                }
-                T_maj = SampledSpectrum(1.f);
-                tMin = t;
-
-            } else {
-                // Handle sample past end of majorant segment
-                Float dt = seg->tMax - tMin;
-                // Handle infinite _dt_ for ray majorant segment
-                if (IsInf(dt))
-                    dt = std::numeric_limits<Float>::max();
-
-                T_maj *= FastExp(-dt * seg->sigma_maj);
-                PBRT_DBG("Past end, added dt %f * maj[0] %f\n", dt, seg->sigma_maj[0]);
-                break;
-            }
-        }
-
-        iter[med_idx].Advance();
-    }
-    return SampledSpectrum(1.f);
-}
-#else
 PBRT_CPU_GPU
 template <typename ConcreteMedium>
 void update_tmin(typename ConcreteMedium::MajorantIterator &iter, ConcreteMedium *medium,
@@ -1302,7 +1219,7 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     }
     return SampledSpectrum(1.f);
 }
-#endif
+
 }  // namespace pbrt
 
 #endif  // PBRT_MEDIA_H
