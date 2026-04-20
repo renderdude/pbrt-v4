@@ -1091,6 +1091,14 @@ PBRT_CPU_GPU SampledSpectrum SampleT_maj(Ray ray, Float tMax, Float u, RNG &rng,
     SampledSpectrum T_maj(1.f);
 
     for (int i = 0; i < ray.medium.count(); ++i) {
+        // Only process media whose runtime type matches ConcreteMedium.
+        // Mixed-type overlaps (e.g. GridMedium + HomogeneousMedium) cannot
+        // share the same MajorantIterator array, so mismatched entries are
+        // silently skipped here. The outer SampleT_maj<F> dispatch calls us
+        // with the type of ray.medium.back(), so at minimum that entry will
+        // always be included.
+        if (!ray.medium[i].Is<ConcreteMedium>())
+            continue;
         auto *m = ray.medium[i].Cast<ConcreteMedium>();
         auto it = m->SampleRay(ray, tMax, lambda, true);
         if (!it.valid())
