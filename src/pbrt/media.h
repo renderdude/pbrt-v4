@@ -51,9 +51,12 @@ class HGPhaseFunction {
     PBRT_CPU_GPU
     HGPhaseFunction(Float g) : g(g) {}
 
-    PBRT_CPU_GPU
     Spectrum p(Vector3f wo, Vector3f wi) const {
-        return new ConstantSpectrum(HenyeyGreenstein(Dot(wo, wi), g));
+        // Use thread-local storage to avoid heap allocation. Callers must
+        // consume the returned Spectrum (via .Sample()) before the next call.
+        thread_local ConstantSpectrum cs(0);
+        cs = ConstantSpectrum(HenyeyGreenstein(Dot(wo, wi), g));
+        return &cs;
     }
 
     PBRT_CPU_GPU
