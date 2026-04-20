@@ -67,6 +67,7 @@ static std::string L4 = "        ";
 static ThreadLocal<std::vector<char>> *current_segment;
 static ThreadLocal<Segment_Map> *segment_map;
 static bool export_ray_tree = false;
+ThreadLocal<Photon_Tile> *ray_tile = nullptr;
 
 // RandomWalkIntegrator Method Definitions
 std::unique_ptr<RandomWalkIntegrator> RandomWalkIntegrator::Create(

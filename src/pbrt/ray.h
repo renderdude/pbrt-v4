@@ -38,7 +38,8 @@ struct Photon_Path {
 
 using Photon_Tile = std::vector<Photon_Path>;
 
-static ThreadLocal<Photon_Tile>* ray_tile;
+// Defined in cpu/integrators.cpp (the sole user of this global).
+extern ThreadLocal<Photon_Tile>* ray_tile;
 
 // Ray Definition
 class Ray {
