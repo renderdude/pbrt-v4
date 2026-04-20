@@ -334,8 +334,7 @@ class DDAMajorantIterator {
     Ray &ray() { return _ray; }
     SampledSpectrum &sigma_t() { return _sigma_t; }
 
-    Float Min_Step() const { return std::min(std::min(deltaT[0], deltaT[1]),
-                                             std::min(deltaT[1], deltaT[2])); }
+    Float Min_Step() const { return std::min({deltaT[0], deltaT[1], deltaT[2]}); }
 
   private:
     // DDAMajorantIterator Private Members
@@ -454,12 +453,12 @@ class MultiVolumeMajorantIterator {
             else if ((_tMin[idx] < tVals[0]) && (_tMax[idx] > tVals[1])) {
                 update_tmin(idx, tVals[1]);
             }
-            // 5. Segment is before voxel
+            // 4. Segment is before voxel
             //    - Update tMin for this iterator
             else if ((_tMin[idx] > tVals[0]) && (_tMin[idx] <= tVals[1])) {
                 update_tmin(idx, tVals[1]);
             }
-            // 6. We have a boo-boo
+            // 5. We have a boo-boo
             else {
                 LOG_ERROR("Case not caught by Advance, segment (%f, "
                           "%f), medium iterator segment [%f, %f].",
