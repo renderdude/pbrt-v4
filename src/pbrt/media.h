@@ -710,7 +710,10 @@ class RGBGridMedium {
     Transform renderFromMedium() { return _renderFromMedium; }
 
     PBRT_CPU_GPU
-    bool inside(Point3f pt) const {return true;}
+    bool inside(Point3f pt) const {
+        pt = _renderFromMedium.ApplyInverse(pt);
+        return Inside(pt, bounds);
+    }
 
   private:
     // RGBGridMedium Private Members
@@ -790,7 +793,10 @@ class CloudMedium {
     Transform renderFromMedium() { return _renderFromMedium; }
 
     PBRT_CPU_GPU
-    bool inside(Point3f pt) const {return true;}
+    bool inside(Point3f pt) const {
+        pt = _renderFromMedium.ApplyInverse(pt);
+        return Inside(pt, bounds);
+    }
 
   private:
     // CloudMedium Private Methods
@@ -961,7 +967,10 @@ class NanoVDBMedium {
     Transform renderFromMedium() { return _renderFromMedium; }
 
     PBRT_CPU_GPU
-    bool inside(Point3f pt) const {return true;}
+    bool inside(Point3f pt) const {
+        pt = _renderFromMedium.ApplyInverse(pt);
+        return Inside(pt, bounds);
+    }
 
   private:
     // NanoVDBMedium Private Methods
