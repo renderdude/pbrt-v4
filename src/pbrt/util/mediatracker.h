@@ -9,7 +9,7 @@
 
 namespace pbrt {
 
-static constexpr int NNestedVolumes = 3;
+static constexpr int NNestedVolumes = 8;
 
 class MediaTracker {
   public:
@@ -53,7 +53,7 @@ class MediaTracker {
                     // All existing mediums are still active; no room for the new one.
                     // Discard it and warn — writing past the array end would be UB.
                     Warning("Pushed Volumes, %d, exceeds maximum allowed, %d; "
-                            "new medium discarded\n", _index, NNestedVolumes);
+                            "new medium discarded at point %s\n", _index, NNestedVolumes, pt);
                 }
                 else {
                     _mediums[_index++] = medium;

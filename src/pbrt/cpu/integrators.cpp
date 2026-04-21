@@ -351,6 +351,78 @@ void RayIntegrator::EvaluatePixelSample(Point2i pPixel, int sampleIndex, Sampler
 STAT_COUNTER("Intersections/Regular ray intersection tests", nIntersectionTests);
 STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 
+// Process all null-BSDF medium boundaries at the same world position as
+// first_isect (coincident faces from separate volume primitives), then
+// advance the ray past the entire cluster with a standard forward offset.
+//
+// Root cause of the coincident-face bug: OffsetRayOrigin (used by
+// SpawnRay / SkipIntersection) pushes the new origin INTO the medium,
+// placing coincident surfaces of other volumes at t < 0 (behind the ray).
+// Fix: probe backward by back_eps so every surface in the cluster sits at
+// t > 0, loop until we revisit a surface we already processed (cluster
+// fully traversed), then do the final forward-offset advance once with
+// the fully accumulated medium.
+static void SkipCoincidentBoundaries(const Integrator *integrator,
+                                      RayDifferential &ray,
+                                      const SurfaceInteraction &first_isect,
+                                      Float t_hit) {
+    // back_eps must be small enough to stay within this cluster but large
+    // enough that coincident surfaces at exactly the same position are
+    // found at t > 0 from the backward-offset probe origin.
+    const Float back_eps = 64.f * MachineEpsilon * (1.f + std::abs(t_hit));
+
+    constexpr int kMaxCoincident = NNestedVolumes + 4;
+    const MediumInterface *visited[kMaxCoincident] = {};
+    int n_visited = 0;
+
+    pstd::optional<ShapeIntersection> si_storage;
+    const SurfaceInteraction *isect = &first_isect;
+
+    while (true) {
+        const MediumInterface *mi = isect->mediumInterface;
+
+        // If we've seen this boundary before, we've gone around the full
+        // cluster.  Advance past it and return.
+        bool already_seen = false;
+        for (int k = 0; k < n_visited; k++)
+            if (visited[k] == mi) { already_seen = true; break; }
+
+        auto advance_and_return = [&]() {
+            Point3f fwd = first_isect.OffsetRayOrigin(ray.d);
+            MediaTracker acc = ray.medium;
+            *((Ray *)&ray) = Ray(fwd, ray.d, acc, ray.time);
+            if (ray.hasDifferentials) {
+                ray.rxOrigin += t_hit * ray.rxDirection;
+                ray.ryOrigin += t_hit * ray.ryDirection;
+            }
+        };
+
+        if (already_seen) {
+            advance_and_return();
+            return;
+        }
+
+        // Record this boundary and apply its medium transition.
+        if (n_visited < kMaxCoincident) visited[n_visited++] = mi;
+        ray.medium = isect->GetMedium(ray.d, (Point3f)isect->pi);
+
+        // Probe from just before the cluster to find remaining coincident
+        // surfaces (all at t ≈ back_eps from this origin).
+        Point3f probe_o = (Point3f)first_isect.pi - back_eps * Vector3f(ray.d);
+        Ray probe(probe_o, ray.d, ray.medium, ray.time);
+        si_storage = integrator->Intersect(probe);
+
+        if (!si_storage ||
+            si_storage->tHit > back_eps * 10.f ||
+            si_storage->intr.material) {  // non-null material = real surface
+            advance_and_return();
+            return;
+        }
+
+        isect = &si_storage->intr;
+    }
+}
+
 // Integrator Method Definitions
 pstd::optional<ShapeIntersection> Integrator::Intersect(const Ray &ray,
                                                         Float tMax) const {
@@ -979,7 +1051,7 @@ SampledSpectrum SimpleVolPathIntegrator::Li(RayDifferential ray,
         // Handle surface intersection along ray path
         BSDF bsdf = si->intr.GetBSDF(ray, lambda, camera, buf, sampler);
         if (!bsdf)
-            si->intr.SkipIntersection(&ray, si->tHit);
+            SkipCoincidentBoundaries(this, ray, si->intr, si->tHit);
         else {
             // Report error if BSDF returns a valid sample
             Float uc = sampler.Get1D();
@@ -1238,7 +1310,7 @@ SampledSpectrum VolPathIntegrator::Li(RayDifferential ray, SampledWavelengths &l
                 Segment seg = {'i', Point3f(isect.pi), Point3f()};
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().push_back(seg);
             }
-            isect.SkipIntersection(&ray, si->tHit);
+            SkipCoincidentBoundaries(this, ray, isect, si->tHit);
             if (export_ray_tree) {
                 (*ray_tree.segments)[ray_tree.current_segment->back()].back().back().end_pt = ray.o;
                 Segment seg = {'i', ray.o, Point3f()};
