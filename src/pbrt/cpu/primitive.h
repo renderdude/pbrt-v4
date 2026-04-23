@@ -26,13 +26,15 @@ class SimplePrimitive;
 class GeometricPrimitive;
 class TransformedPrimitive;
 class AnimatedPrimitive;
+class MultiVolumePrimitive;
 class BVHAggregate;
 class KdTreeAggregate;
 
 // Primitive Definition
 class Primitive
     : public TaggedPointer<SimplePrimitive, GeometricPrimitive, TransformedPrimitive,
-                           AnimatedPrimitive, BVHAggregate, KdTreeAggregate> {
+                           AnimatedPrimitive, MultiVolumePrimitive,
+                           BVHAggregate, KdTreeAggregate> {
   public:
     // Primitive Interface
     using TaggedPointer::TaggedPointer;
@@ -115,6 +117,32 @@ class AnimatedPrimitive {
     // AnimatedPrimitive Private Members
     Primitive primitive;
     AnimatedTransform renderFromPrimitive;
+};
+
+// MultiVolumePrimitive Definition
+//
+// Groups N interface shapes whose faces are spatially coincident (occupy the
+// same position along the ray). On intersection it finds all sub-shapes hit
+// within a floating-point epsilon of the nearest hit, accumulates all of their
+// medium transitions in one step, then returns a synthetic surface interaction
+// with mediumInterface=nullptr and medium=accumulated. The integrator's
+// SkipIntersection call then simply advances the ray origin without applying any
+// further transition, which is correct because all transitions were pre-applied.
+class MultiVolumePrimitive {
+  public:
+    struct SubShape {
+        Shape shape;
+        MediumInterface mediumInterface;
+    };
+
+    MultiVolumePrimitive(std::vector<SubShape> subShapes);
+
+    Bounds3f Bounds() const;
+    pstd::optional<ShapeIntersection> Intersect(const Ray &ray, Float tMax) const;
+    bool IntersectP(const Ray &ray, Float tMax) const;
+
+  private:
+    std::vector<SubShape> subShapes;
 };
 
 }  // namespace pbrt

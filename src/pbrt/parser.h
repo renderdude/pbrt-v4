@@ -89,6 +89,9 @@ class ParserTarget {
     virtual void ObjectEnd(FileLoc loc) = 0;
     virtual void ObjectInstance(const std::string &name, FileLoc loc) = 0;
 
+    virtual void MultiVolumeBegin(FileLoc loc) {}
+    virtual void MultiVolumeEnd(FileLoc loc) {}
+
     virtual void EndOfFiles() = 0;
 
   protected:

@@ -274,6 +274,7 @@ class BasicScene {
     int AddAreaLight(SceneEntity light);
     void AddShapes(pstd::span<ShapeSceneEntity> shape);
     void AddAnimatedShape(AnimatedShapeSceneEntity shape);
+    void AddMultiVolumeGroup(std::vector<ShapeSceneEntity> group);
     void AddInstanceDefinition(InstanceDefinitionSceneEntity instance);
     void AddInstanceUses(pstd::span<InstanceSceneEntity> in);
 
@@ -331,6 +332,7 @@ class BasicScene {
     const RGBColorSpace *filmColorSpace;
     std::vector<ShapeSceneEntity> shapes;
     std::vector<AnimatedShapeSceneEntity> animatedShapes;
+    std::vector<std::vector<ShapeSceneEntity>> multiVolumeGroups;
     std::vector<InstanceSceneEntity> instances;
     std::map<InternedString, InstanceDefinitionSceneEntity *> instanceDefinitions;
 
@@ -428,6 +430,9 @@ class BasicSceneBuilder : public ParserTarget {
     void ObjectEnd(FileLoc loc);
     void ObjectInstance(const std::string &name, FileLoc loc);
 
+    void MultiVolumeBegin(FileLoc loc) override;
+    void MultiVolumeEnd(FileLoc loc) override;
+
     void EndOfFiles();
 
     BasicSceneBuilder *CopyForImport();
@@ -510,6 +515,9 @@ class BasicSceneBuilder : public ParserTarget {
     // consistently ordered across runs.
     std::vector<ShapeSceneEntity> shapes;
     std::vector<InstanceSceneEntity> instanceUses;
+
+    bool inMultiVolumeDefinition = false;
+    std::vector<ShapeSceneEntity> multiVolumeCurrentShapes;
 
     std::set<std::string> namedMaterialNames, mediumNames;
     std::set<std::string> floatTextureNames, spectrumTextureNames, instanceNames;

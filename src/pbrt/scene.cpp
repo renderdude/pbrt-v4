@@ -299,7 +299,9 @@ void BasicSceneBuilder::Shape(const std::string &name, ParsedParameterVector par
              graphicsState.reverseOrientation, graphicsState.currentMaterialIndex,
              graphicsState.currentMaterialName, areaLightIndex,
              graphicsState.currentInsideMedium, graphicsState.currentOutsideMedium});
-        if (activeInstanceDefinition)
+        if (inMultiVolumeDefinition)
+            multiVolumeCurrentShapes.push_back(std::move(entity));
+        else if (activeInstanceDefinition)
             activeInstanceDefinition->entity.shapes.push_back(std::move(entity));
         else
             shapes.push_back(std::move(entity));
@@ -392,6 +394,37 @@ void BasicSceneBuilder::ObjectInstance(const std::string &origName, FileLoc loc)
     const class Transform *renderFromInstance =
         transformCache.Lookup(RenderFromObject(0) * worldFromRender);
     instanceUses.push_back(InstanceSceneEntity(name, loc, renderFromInstance));
+}
+
+void BasicSceneBuilder::MultiVolumeBegin(FileLoc loc) {
+    VERIFY_WORLD("MultiVolumeBegin");
+    if (inMultiVolumeDefinition)
+        ErrorExitDeferred(&loc, "Nested MultiVolumeBegin is not allowed.");
+    pushedGraphicsStates.push_back(graphicsState);
+    pushStack.push_back({'v', loc});
+    inMultiVolumeDefinition = true;
+}
+
+void BasicSceneBuilder::MultiVolumeEnd(FileLoc loc) {
+    VERIFY_WORLD("MultiVolumeEnd");
+    if (!inMultiVolumeDefinition) {
+        ErrorExitDeferred(&loc, "MultiVolumeEnd without MultiVolumeBegin.");
+        return;
+    }
+
+    auto [what, beginLoc] = pushStack.back();
+    if (what != 'v')
+        ErrorExitDeferred(&loc, "Mismatched MultiVolumeEnd — expected end to %c begun at %s",
+                          what, beginLoc);
+    pushStack.pop_back();
+    graphicsState = pushedGraphicsStates.back();
+    pushedGraphicsStates.pop_back();
+
+    inMultiVolumeDefinition = false;
+    if (!multiVolumeCurrentShapes.empty()) {
+        scene->AddMultiVolumeGroup(std::move(multiVolumeCurrentShapes));
+        multiVolumeCurrentShapes.clear();
+    }
 }
 
 void BasicSceneBuilder::EndOfFiles() {
@@ -1033,6 +1066,11 @@ void BasicScene::AddAnimatedShape(AnimatedShapeSceneEntity shape) {
     animatedShapes.push_back(std::move(shape));
 }
 
+void BasicScene::AddMultiVolumeGroup(std::vector<ShapeSceneEntity> group) {
+    std::lock_guard<std::mutex> lock(shapeMutex);
+    multiVolumeGroups.push_back(std::move(group));
+}
+
 void BasicScene::AddInstanceDefinition(InstanceDefinitionSceneEntity instance) {
     InstanceDefinitionSceneEntity *def =
         new InstanceDefinitionSceneEntity(std::move(instance));
@@ -1446,6 +1484,27 @@ Primitive BasicScene::CreateAggregate(
 
     shapes.clear();
     shapes.shrink_to_fit();
+
+    // MultiVolume groups: each group becomes one MultiVolumePrimitive whose
+    // sub-shapes all have their medium transitions applied atomically on hit.
+    for (auto &group : multiVolumeGroups) {
+        std::vector<MultiVolumePrimitive::SubShape> subShapes;
+        for (auto &sh : group) {
+            pstd::vector<pbrt::Shape> shapeObjects =
+                Shape::Create(sh.name, sh.renderFromObject, sh.objectFromRender,
+                              sh.reverseOrientation, sh.parameters,
+                              textures.floatTextures, &sh.loc, alloc);
+            sh.parameters.ReportUnused();
+            pbrt::MediumInterface mi(findMedium(sh.insideMedium, &sh.loc),
+                                     findMedium(sh.outsideMedium, &sh.loc));
+            for (auto &s : shapeObjects)
+                subShapes.push_back({s, mi});
+            sh = ShapeSceneEntity();
+        }
+        if (!subShapes.empty())
+            primitives.push_back(new MultiVolumePrimitive(std::move(subShapes)));
+    }
+    multiVolumeGroups.clear();
 
     // Animated shapes
     auto CreatePrimitivesForAnimatedShapes =

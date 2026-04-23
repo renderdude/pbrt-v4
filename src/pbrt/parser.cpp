@@ -835,6 +835,10 @@ void parse(ParserTarget *target, std::unique_ptr<Tokenizer> t) {
                 basicParamListEntrypoint(&ParserTarget::MakeNamedMedium, tok->loc);
             else if (tok->token == "Material")
                 basicParamListEntrypoint(&ParserTarget::Material, tok->loc);
+            else if (tok->token == "MultiVolumeBegin")
+                target->MultiVolumeBegin(tok->loc);
+            else if (tok->token == "MultiVolumeEnd")
+                target->MultiVolumeEnd(tok->loc);
             else if (tok->token == "MediumInterface") {
                 std::string_view n = dequoteString(*nextToken(TokenRequired));
                 std::string names[2];
